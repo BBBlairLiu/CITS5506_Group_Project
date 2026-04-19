@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartSan Dashboard</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --good: #15803d;
+      --warn: #d97706;
+      --bad: #b91c1c;
+      --shadow: 0 10px 25px rgba(0, 0, 0, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .title h1 {
+      margin: 0 0 8px 0;
+      font-size: 32px;
+    }
+
+    .title p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .status-pill {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 14px;
+      box-shadow: var(--shadow);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .card h2 {
+      margin: 0 0 10px 0;
+      font-size: 15px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .metric {
+      font-size: 34px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .subtext {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+
+    .panel-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .row:last-child {
+      border-bottom: none;
+    }
+
+    .row .label {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .row .value {
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #111827;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .footer-note {
+      margin-top: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .panel-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .header {
+        flex-direction: column;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title">
+        <h1>SmartSan Dashboard</h1>
+        <p>
+          Mock monitoring interface for the current prototype design.<br>
+          This version uses simulated data so the layout and workflow can be built before hardware arrives.
+        </p>
+      </div>
+      <div class="status-pill" id="lastUpdatedPill">Last updated: --</div>
+    </div>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Usage Count</h2>
+        <p class="metric" id="usageCount">0</p>
+        <div class="subtext">Total valid dispense events</div>
+      </div>
+
+      <div class="card">
+        <h2>Current Weight</h2>
+        <p class="metric" id="currentWeight">0 g</p>
+        <div class="subtext">Stable averaged reading</div>
+      </div>
+
+      <div class="card">
+        <h2>Sanitizer Status</h2>
+        <p class="metric good" id="sanitizerStatus">NORMAL</p>
+        <div class="subtext">Threshold-based refill monitoring</div>
+      </div>
+
+      <div class="card">
+        <h2>Device State</h2>
+        <p class="metric" style="font-size: 24px;" id="deviceState">IDLE</p>
+        <div class="subtext" id="deviceMessage">System ready</div>
+      </div>
+    </section>
+
+    <section class="panel-grid">
+      <div class="card">
+        <h2>Current System Details</h2>
+        <div class="row">
+          <div class="label">Refill Threshold</div>
+          <div class="value" id="refillThreshold">250 g</div>
+        </div>
+        <div class="row">
+          <div class="label">Hand Detection</div>
+          <div class="value" id="handDetection">No hand detected</div>
+        </div>
+        <div class="row">
+          <div class="label">Dispensing Lockout</div>
+          <div class="value">2 seconds</div>
+        </div>
+        <div class="row">
+          <div class="label">Reading Mode</div>
+          <div class="value">Gated sampling + averaging</div>
+        </div>
+        <div class="row">
+          <div class="label">Data Source</div>
+          <div class="value">Mock data</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Demo Controls</h2>
+        <div class="controls">
+          <button id="simulateDispenseBtn">Simulate 1 Dispense</button>
+          <button class="secondary" id="resetBtn">Reset Dashboard</button>
+        </div>
+        <div class="footer-note">
+          This control panel is only for development preview. Later, these values can be replaced with live ESP32 variables from IR detection, servo action, and HX711 readings.
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const state = {
+      usageCount: 0,
+      currentWeight: 520,
+      refillThreshold: 250,
+      sanitizerLow: false,
+      deviceState: 'IDLE',
+      deviceMessage: 'System ready',
+      handDetected: false
+    };
+
+    function updateTimestamp() {
+      const now = new Date();
+      const formatted = now.toLocaleString();
+      document.getElementById('lastUpdatedPill').textContent = `Last updated: ${formatted}`;
+    }
+
+    function render() {
+      document.getElementById('usageCount').textContent = state.usageCount;
+      document.getElementById('currentWeight').textContent = `${state.currentWeight} g`;
+      document.getElementById('refillThreshold').textContent = `${state.refillThreshold} g`;
+      document.getElementById('deviceState').textContent = state.deviceState;
+      document.getElementById('deviceMessage').textContent = state.deviceMessage;
+      document.getElementById('handDetection').textContent = state.handDetected ? 'Valid hand detected' : 'No hand detected';
+
+      const sanitizerStatusEl = document.getElementById('sanitizerStatus');
+      sanitizerStatusEl.textContent = state.sanitizerLow ? 'LOW' : 'NORMAL';
+      sanitizerStatusEl.classList.remove('good', 'warn', 'bad');
+      sanitizerStatusEl.classList.add(state.sanitizerLow ? 'bad' : 'good');
+
+      updateTimestamp();
+    }
+
+    function simulateDispense() {
+      state.handDetected = true;
+      state.deviceState = 'HAND DETECTED';
+      state.deviceMessage = 'Valid detection confirmed';
+      render();
+
+      setTimeout(() => {
+        state.deviceState = 'DISPENSING';
+        state.deviceMessage = 'Servo press triggered';
+        render();
+      }, 500);
+
+      setTimeout(() => {
+        state.usageCount += 1;
+        state.currentWeight = Math.max(0, state.currentWeight - 18);
+        state.deviceState = 'WAIT STABILISE';
+        state.deviceMessage = 'Applying gated sampling and averaging';
+        render();
+      }, 1200);
+
+      setTimeout(() => {
+        state.sanitizerLow = state.currentWeight <= state.refillThreshold;
+        state.deviceState = 'UPDATE STATUS';
+        state.deviceMessage = state.sanitizerLow ? 'Low sanitizer warning generated' : 'System stable and normal';
+        render();
+      }, 2600);
+
+      setTimeout(() => {
+        state.handDetected = false;
+        state.deviceState = 'IDLE';
+        state.deviceMessage = 'System ready';
+        render();
+      }, 3600);
+    }
+
+    function resetDashboard() {
+      state.usageCount = 0;
+      state.currentWeight = 520;
+      state.sanitizerLow = false;
+      state.deviceState = 'IDLE';
+      state.deviceMessage = 'System ready';
+      state.handDetected = false;
+      render();
+    }
+
+    document.getElementById('simulateDispenseBtn').addEventListener('click', simulateDispense);
+    document.getElementById('resetBtn').addEventListener('click', resetDashboard);
+
+    render();
+  </script>
+</body>
+</html>
