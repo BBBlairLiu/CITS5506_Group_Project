@@ -43,7 +43,7 @@ Open the dashboard file in a browser.
 
 ### Option 1
 Open the HTML file directly:
-- `src/smartsan_dashboard.html`
+- `src/index.html`
 
 ### Option 2
 Use **Live Server** in VS Code:
@@ -56,5 +56,5 @@ Use **Live Server** in VS Code:
 ```text
 CITS5506_GROUP_PROJECT/
 ├─ src/
-│  └─ smartsan_dashboard.html
+│  └─ index.html
 └─ README.md
