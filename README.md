@@ -5,11 +5,12 @@ The current prototype design combines automatic dispensing, sanitizer level moni
 
 ## Current Repository Status
 
-This repository currently includes an initial **mock dashboard page** for the SmartSan system.
+This repository currently includes a mock dashboard, software planning documents, and an ESP32 firmware skeleton for the SmartSan system.
 
 At this stage:
 - the dashboard is built with HTML, CSS, and JavaScript
-- the displayed values are **mock data**
+- the displayed values are **mock data following the planned ESP32/Blynk data contract**
+- the firmware can run with simulated hardware while the real components are in transit
 - the page is intended to simulate the future monitoring workflow before hardware arrives
 
 ## Current Design Overview
@@ -19,23 +20,48 @@ The current SmartSan design is based on:
 - **IR sensor** for hand detection
 - **servo motor** for bottle pressing
 - **load cell + HX711** for sanitizer level monitoring
-- **Wi-Fi browser interface** for status display
+- **Blynk dashboard** as the primary mobile dashboard
+- **local browser interface** as a mock/demo fallback
 
 The current software flow is planned as:
 
-IR detects hand -> servo presses bottle -> usage count updates -> weight is read and stabilised -> refill status is checked -> status is sent to the web page
+IR detects hand -> servo presses bottle -> usage count updates -> weight is read and stabilised -> refill status is checked -> status is sent to Blynk/dashboard
 
 ## Dashboard Features (Mock Version)
 
 The current dashboard shows:
 - usage count
 - current weight
+- remaining level percentage
 - sanitizer status
 - device state
+- device online state
 - refill threshold
+- last dispense time
 - last updated time
 
-It also includes a **Simulate 1 Dispense** button to preview the expected monitoring workflow.
+It also includes demo controls for simulated sensor dispense, manual dispense, alert reset, and system enable/disable.
+
+## Firmware Skeleton
+
+The ESP32 Arduino sketch is available at:
+
+- `firmware/SmartSanESP32/SmartSanESP32.ino`
+
+By default, the sketch uses mock hardware mode:
+
+- Serial Monitor input `d` simulates a valid hand-detection event
+- Blynk virtual pins are updated using the planned dashboard data contract
+- hardware adapter functions are isolated so they can later be replaced with real IR, servo, and HX711 logic
+
+Before uploading to an ESP32, replace the placeholder Blynk and Wi-Fi values in the sketch.
+
+## Software Documents
+
+- `docs/software_functionalities.md` summarises the software features.
+- `docs/blynk_dashboard.md` defines the Blynk dashboard widgets and virtual pins.
+- `docs/data_contract.md` defines the fields shared between firmware and dashboard.
+- `docs/integration_test_plan.md` lists the hardware integration and evidence checklist.
 
 ## How to Run
 
@@ -55,6 +81,14 @@ Use **Live Server** in VS Code:
 
 ```text
 CITS5506_GROUP_PROJECT/
+├─ docs/
+│  ├─ blynk_dashboard.md
+│  ├─ data_contract.md
+│  ├─ integration_test_plan.md
+│  └─ software_functionalities.md
+├─ firmware/
+│  └─ SmartSanESP32/
+│     └─ SmartSanESP32.ino
 ├─ src/
 │  └─ index.html
 └─ README.md
