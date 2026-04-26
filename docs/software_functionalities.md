@@ -9,12 +9,14 @@ The current SmartSan prototype is based on:
 - IR sensor for hand detection
 - Servo motor for bottle pressing
 - Load cell with HX711 for sanitizer level monitoring
-- Wi-Fi browser interface for status display
+- Blynk dashboard as the primary mobile interface
+- Local browser interface as a mock/demo fallback
 
 The current direction is to:
 - use the weight sensor as the primary level-monitoring method
 - keep ToF only as a backup option
 - focus first on a reliable monitoring workflow instead of advanced analytics
+- use simulated sensor values before hardware arrives so the software flow can be tested early
 
 ---
 
@@ -147,8 +149,8 @@ The software manages the sequence of system states so the workflow happens in th
 
 ---
 
-### 9. Wi-Fi Status Transmission
-The ESP32 sends the latest system variables to the browser interface.
+### 9. Wi-Fi / Blynk Status Transmission
+The ESP32 sends the latest system variables to Blynk and can also support the local browser mock interface during development.
 
 **Purpose**
 - make monitoring information visible through the web page
@@ -196,6 +198,11 @@ The current software priority is:
 7. refill alert logic
 8. Wi-Fi status transmission
 9. web monitoring display
+
+The implementation details are split across:
+- `blynk_dashboard.md` for Blynk virtual pins and widgets
+- `data_contract.md` for shared ESP32/dashboard fields
+- `integration_test_plan.md` for hardware arrival and final demo testing
 
 ---
 
