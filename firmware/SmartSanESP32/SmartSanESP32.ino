@@ -1,8 +1,9 @@
 /*
   SmartSan ESP32 firmware skeleton.
 
-  This sketch is designed to run before the final hardware arrives. By default it
-  uses simulated IR, servo, and HX711 behaviour so the Blynk dashboard and state
+  This sketch uses simulated IR and servo behaviour so the Blynk dashboard and state
+  machine can be tested early. Weight sensing (HX711) is planned but currently
+  replaced with pump-count logic for the prototype.
   machine can be tested early. Set USE_MOCK_HARDWARE to 0 when the real sensors
   are ready and replace the hardware adapter functions near the bottom.
 */
@@ -18,7 +19,7 @@
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
 
-#define USE_MOCK_HARDWARE 
+#define USE_MOCK_HARDWARE 1 // Set to 0 to use real hardware when ready
 
 //ir sensor variables for debounce logic and stable state detection
 static bool _irLastState = false;
@@ -40,7 +41,7 @@ const int PIN_MANUAL_DISPENSE = V10;
 const int PIN_RESET_ALERT = V11;
 const int PIN_SYSTEM_ENABLED = V12;
 
-const int MAX_PUMPS = 25; // temp value of total pumps for bottle capacity estimation
+const int MAX_PUMPS = 25; // TODO: calibrate by counting full bottle dispenses
 const unsigned long DISPENSE_LOCKOUT_MS = 2000;
 const unsigned long STABILISE_DELAY_MS = 1200;
 const unsigned long STATUS_INTERVAL_MS = 5000;
@@ -50,7 +51,7 @@ enum DeviceState {
   HAND_DETECTED,
   DISPENSING,
   WAIT_STABILISE,
-  READ_WEIGHT,
+  CHECK_REFILL, // renamed
   UPDATE_STATUS,
   REFILL_REQUIRED,
   DISABLED,
@@ -80,8 +81,8 @@ String stateToString(DeviceState state) {
       return "DISPENSING";
     case WAIT_STABILISE:
       return "WAIT_STABILISE";
-    case READ_WEIGHT:
-      return "READ_WEIGHT";
+    case CHECK_REFILL:
+      return "CHECK_REFILL";
     case UPDATE_STATUS:
       return "UPDATE_STATUS";
     case REFILL_REQUIRED:
@@ -113,7 +114,7 @@ void sendStatus() { //updading logic with pump count instead of weight
   Blynk.virtualWrite(PIN_DEVICE_ONLINE, Blynk.connected() ? 1 : 0);
 
   // NEW: raw remaining pumps
-  Blynk.virtualWrite(V7, remainingPumps);
+Blynk.virtualWrite(PIN_REMAINING_PUMPS, remainingPumps); //cleaner version
 }
 
 bool canStartDispense() {
@@ -173,11 +174,11 @@ void updateStateMachine() {
 
     case WAIT_STABILISE:
       if (millis() - stateStartedMs >= STABILISE_DELAY_MS) {
-        setState(READ_WEIGHT);
+        setState(CHECK_REFILL);
       }
       break;
 
-    case READ_WEIGHT: //count of uses as weight sensor is not used anymore
+    case CHECK_REFILL: //count of uses as weight sensor is not used anymore
       refillAlert = (remainingPumps <= 0);
       setState(UPDATE_STATUS);
       break;
@@ -284,17 +285,10 @@ bool readHandDetected() { //updated logic to use IR sensor with debounce and sta
   return false;
 #endif
 }
-
-  char command = Serial.read();
-  return command == 'd' || command == 'D';
-#else
-  // TODO: Replace with real IR sensor read, including threshold/debounce logic.
-  return false;
-#endif
-}
+//removed extra garbage code
 
 void performDispense() {
-#if USE_MOCK_HARDWARE
+#if USE_MOCK_HARDWARE  // use mock (no real IR yet)
   Serial.println("Mock dispense: servo press and return");
 #else
   // TODO: Replace with servo write angles and timing once the mechanism is built.
