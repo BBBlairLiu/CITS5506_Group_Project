@@ -30,9 +30,7 @@ const int PIN_MANUAL_DISPENSE = V10;
 const int PIN_RESET_ALERT = V11;
 const int PIN_SYSTEM_ENABLED = V12;
 
-const float FULL_WEIGHT_G = 520.0;
-const float EMPTY_WEIGHT_G = 120.0;
-const float REFILL_THRESHOLD_G = 250.0;
+const int MAX_PUMPS = 25; // temp value of total pumps for bottle capacity estimation
 const unsigned long DISPENSE_LOCKOUT_MS = 2000;
 const unsigned long STABILISE_DELAY_MS = 1200;
 const unsigned long STATUS_INTERVAL_MS = 5000;
@@ -52,7 +50,8 @@ enum DeviceState {
 DeviceState deviceState = IDLE;
 
 int usageCount = 0;
-float currentWeight = FULL_WEIGHT_G;
+int sessionCount = 0; // 
+int remainingPumps = MAX_PUMPS;
 bool refillAlert = false;
 bool systemEnabled = true;
 bool manualDispenseRequested = false;
@@ -84,20 +83,7 @@ String stateToString(DeviceState state) {
   }
 }
 
-int calculateRemainingPercent(float weight) {
-  float usableRange = FULL_WEIGHT_G - EMPTY_WEIGHT_G;
-  float percent = ((weight - EMPTY_WEIGHT_G) / usableRange) * 100.0;
-
-  if (percent < 0) {
-    return 0;
-  }
-
-  if (percent > 100) {
-    return 100;
-  }
-
-  return round(percent);
-}
+//deleted weight sensor calculation, old design function is replaced with new design of pump count
 
 void setState(DeviceState nextState) {
   deviceState = nextState;
@@ -105,14 +91,19 @@ void setState(DeviceState nextState) {
   sendStatus();
 }
 
-void sendStatus() {
+void sendStatus() { //updading logic with pump count instead of weight
+  int remainingPercent = (remainingPumps * 100) / MAX_PUMPS;
+  remainingPercent = constrain(remainingPercent, 0, 100);
+
   Blynk.virtualWrite(PIN_USAGE_COUNT, usageCount);
-  Blynk.virtualWrite(PIN_CURRENT_WEIGHT, currentWeight);
-  Blynk.virtualWrite(PIN_REMAINING_PERCENT, calculateRemainingPercent(currentWeight));
+  Blynk.virtualWrite(PIN_REMAINING_PERCENT, remainingPercent);
   Blynk.virtualWrite(PIN_REFILL_ALERT, refillAlert ? 1 : 0);
   Blynk.virtualWrite(PIN_DEVICE_STATE, stateToString(deviceState));
   Blynk.virtualWrite(PIN_LAST_DISPENSE_AT, lastDispenseMs == 0 ? "--" : String(lastDispenseMs / 1000) + "s");
   Blynk.virtualWrite(PIN_DEVICE_ONLINE, Blynk.connected() ? 1 : 0);
+
+  // NEW: raw remaining pumps
+  Blynk.virtualWrite(V7, remainingPumps);
 }
 
 bool canStartDispense() {
@@ -151,9 +142,22 @@ void updateStateMachine() {
       setState(DISPENSING);
       break;
 
-    case DISPENSING:
-      usageCount += 1;
+    case DISPENSING: //pump count logic added for remaining hand sanitiser estimation, rather than weight logic
+      if (sessionCount < MAX_PUMPS) {
+        usageCount += 1;
+        sessionCount += 1;
+      }
+
+      remainingPumps = MAX_PUMPS - sessionCount;
       lastDispenseMs = millis();
+
+      Serial.print("[COUNT] Total: ");
+      Serial.print(usageCount);
+      Serial.print(" | Session: ");
+      Serial.print(sessionCount);
+      Serial.print(" | Remaining: ");
+      Serial.println(remainingPumps);
+
       setState(WAIT_STABILISE);
       break;
 
@@ -163,9 +167,8 @@ void updateStateMachine() {
       }
       break;
 
-    case READ_WEIGHT:
-      currentWeight = readStableWeight();
-      refillAlert = currentWeight <= REFILL_THRESHOLD_G;
+    case READ_WEIGHT: //count of uses as weight sensor is not used anymore
+      refillAlert = (remainingPumps <= 0);
       setState(UPDATE_STATUS);
       break;
 
@@ -183,10 +186,15 @@ void updateStateMachine() {
       break;
   }
 
-  if (resetAlertRequested) {
+  if (resetAlertRequested) { // Reset session count and refill alert, but keep total usage count.
     resetAlertRequested = false;
-    currentWeight = FULL_WEIGHT_G;
+
+    sessionCount = 0;
+    remainingPumps = MAX_PUMPS;
     refillAlert = false;
+
+    Serial.println("[RESET] Refill confirmed");
+
     setState(systemEnabled ? IDLE : DISABLED);
   }
 }
@@ -244,17 +252,4 @@ void performDispense() {
 #endif
 }
 
-float readStableWeight() {
-#if USE_MOCK_HARDWARE
-  currentWeight -= 18.0;
-
-  if (currentWeight < EMPTY_WEIGHT_G) {
-    currentWeight = EMPTY_WEIGHT_G;
-  }
-
-  return currentWeight;
-#else
-  // TODO: Replace with HX711 averaging after tare/calibration.
-  return currentWeight;
-#endif
-}
+//removed reading of weight function due to no weight sensor
