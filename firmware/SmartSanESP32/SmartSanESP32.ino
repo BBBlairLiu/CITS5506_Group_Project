@@ -8,14 +8,22 @@
   are ready and replace the hardware adapter functions near the bottom.
 */
 
+// Blynk configuration - replace with actual template ID, name, and auth token from your Blynk project
 #define BLYNK_TEMPLATE_ID "REPLACE_WITH_TEMPLATE_ID"
 #define BLYNK_TEMPLATE_NAME "SmartSan Prototype"
 #define BLYNK_AUTH_TOKEN "REPLACE_WITH_DEVICE_AUTH_TOKEN"
+
 // IR sensor configuration - adjust as needed for the actual sensor and placement
 #define PIN_IR_SENSOR     2
 #define IR_ACTIVE_LOW     true
 #define IR_DEBOUNCE_MS    80
 
+// Servo configuration - adjust pin and angles as needed for the actual mechanism
+#define PIN_SERVO         5
+
+// Hardware libraries - uncomment when real hardware is used
+
+#include <ESP32Servo.h> 
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
 
@@ -27,9 +35,18 @@ static bool _irStableState = false;
 static unsigned long _irLastChangeMs = 0;
 static bool _irEventConsumed = true;
 
+// Servo timing and angles - adjust as needed for the actual mechanism
+const int SERVO_HOME_DEG  = 0;
+const int SERVO_PRESS_DEG = 60;
+const int SERVO_PRESS_MS  = 400;
+const int SERVO_RETURN_MS = 300;
+const int SERVO_SETTLE_MS = 100;
+
+// WiFi credentials - replace with actual network details
 const char WIFI_SSID[] = "REPLACE_WITH_WIFI_NAME";
 const char WIFI_PASS[] = "REPLACE_WITH_WIFI_PASSWORD";
 
+// Blynk virtual pin definitions
 const int PIN_USAGE_COUNT = V0;
 const int PIN_REMAINING_PERCENT = V2;
 const int PIN_REFILL_ALERT = V3;
@@ -41,11 +58,13 @@ const int PIN_MANUAL_DISPENSE = V10;
 const int PIN_RESET_ALERT = V11;
 const int PIN_SYSTEM_ENABLED = V12;
 
+// Device and state machine variables
 const int MAX_PUMPS = 25; // TODO: calibrate by counting full bottle dispenses
 const unsigned long DISPENSE_LOCKOUT_MS = 2000;
 const unsigned long STABILISE_DELAY_MS = 1200;
 const unsigned long STATUS_INTERVAL_MS = 5000;
 
+// State machine states
 enum DeviceState {
   IDLE,
   HAND_DETECTED,
@@ -58,8 +77,10 @@ enum DeviceState {
   ERROR_STATE
 };
 
+// Global variables
 DeviceState deviceState = IDLE;
 
+Servo dispenserServo; // Servo object for controlling the dispenser mechanism
 int usageCount = 0;
 int sessionCount = 0; // 
 int remainingPumps = MAX_PUMPS;
@@ -223,13 +244,21 @@ BLYNK_WRITE(V12) {
   setState(systemEnabled ? IDLE : DISABLED);
 }
 
-void setup() {
+void setup() { 
   Serial.begin(115200);
   delay(100);
 
-  pinMode(PIN_IR_SENSOR, INPUT); // Assuming the IR sensor is connected to this pin. Adjust as necessary.
+  pinMode(PIN_IR_SENSOR, INPUT); // Set IR sensor pin as input
 
-  Blynk.begin(BLYNK_AUTH_TOKEN, WIFI_SSID, WIFI_PASS);
+  Blynk.begin(BLYNK_AUTH_TOKEN, WIFI_SSID, WIFI_PASS); // Connect to WiFi and Blynk
+
+  #if !USE_MOCK_HARDWARE
+    dispenserServo.attach(PIN_SERVO); // Attach servo to pin  
+    dispenserServo.write(SERVO_HOME_DEG); // Move servo to home position
+    delay(500);
+  #endif
+  delay(500);
+
   setState(IDLE);
 }
 
@@ -287,11 +316,23 @@ bool readHandDetected() { //updated logic to use IR sensor with debounce and sta
 }
 //removed extra garbage code
 
+//updated to use servo for dispensing, replacing old mock logic of reading from serial input
 void performDispense() {
-#if USE_MOCK_HARDWARE  // use mock (no real IR yet)
-  Serial.println("Mock dispense: servo press and return");
+#if USE_MOCK_HARDWARE
+  Serial.println("[SERVO] Mock dispense: press and return simulated");
+
 #else
-  // TODO: Replace with servo write angles and timing once the mechanism is built.
+  Serial.println("[SERVO] Press started");
+
+  delay(SERVO_SETTLE_MS);
+
+  dispenserServo.write(SERVO_PRESS_DEG);
+  delay(SERVO_PRESS_MS);
+
+  dispenserServo.write(SERVO_HOME_DEG);
+  delay(SERVO_RETURN_MS);
+
+  Serial.println("[SERVO] Return complete");
 #endif
 }
 
