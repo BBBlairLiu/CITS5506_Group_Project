@@ -224,9 +224,9 @@
       </div>
 
       <div class="card">
-        <h2>Current Weight</h2>
-        <p class="metric" id="currentWeight">0 g</p>
-        <div class="subtext">Stable averaged reading</div>
+        <h2>Remaining Pumps</h2>
+        <p class="metric" id="remainingPumps">25</p>
+        <div class="subtext">Pump-count based level estimate</div>
       </div>
 
       <div class="card">
@@ -252,6 +252,12 @@
         <p class="metric good" id="deviceOnline">ONLINE</p>
         <div class="subtext">Blynk/Wi-Fi status placeholder</div>
       </div>
+
+      <div class="card">
+        <h2>Sync Status</h2>
+        <p class="metric" style="font-size: 24px;" id="syncStatus">HEALTHY</p>
+        <div class="subtext" id="syncMessage">Live update loop is stable</div>
+      </div>
     </section>
 
     <section class="panel-grid">
@@ -259,7 +265,7 @@
         <h2>Current System Details</h2>
         <div class="row">
           <div class="label">Refill Threshold</div>
-          <div class="value" id="refillThreshold">250 g</div>
+          <div class="value" id="refillThreshold">0 pumps</div>
         </div>
         <div class="row">
           <div class="label">Last Dispense Time</div>
@@ -275,11 +281,15 @@
         </div>
         <div class="row">
           <div class="label">Reading Mode</div>
-          <div class="value">Gated sampling + averaging</div>
+          <div class="value">Pump count + state machine</div>
         </div>
         <div class="row">
           <div class="label">Data Source</div>
-          <div class="value">Mock data following ESP32 contract</div>
+          <div class="value" id="dataSource">Mock data following ESP32 contract</div>
+        </div>
+        <div class="row">
+          <div class="label">Last Sync</div>
+          <div class="value" id="lastSyncAt">--</div>
         </div>
       </div>
 
@@ -290,33 +300,46 @@
             <label for="systemEnabledToggle">System enabled</label>
             <input type="checkbox" id="systemEnabledToggle" checked>
           </div>
+          <div class="toggle-row">
+            <label for="syncFailureToggle">Simulate sync failure</label>
+            <input type="checkbox" id="syncFailureToggle">
+          </div>
           <button id="simulateDispenseBtn">Simulate Sensor Dispense</button>
           <button class="secondary" id="manualDispenseBtn">Manual Dispense</button>
           <button class="secondary" id="resetAlertBtn">Reset Alert</button>
           <button class="danger" id="resetBtn">Reset Dashboard</button>
         </div>
         <div class="footer-note">
-          This control panel is only for development preview. Later, these values can be replaced with live ESP32 variables from IR detection, servo action, and HX711 readings.
+          This control panel is for software integration preview. The same fields map to Blynk virtual pins used by the ESP32 firmware.
         </div>
       </div>
+    </section>
+
+    <section class="card" style="margin-top: 16px;">
+      <h2>Event Timeline</h2>
+      <div id="eventTimeline" class="subtext">No events yet.</div>
     </section>
   </div>
 
   <script>
     const state = {
       usageCount: 0,
-      currentWeight: 520,
-      fullWeight: 520,
-      emptyWeight: 120,
-      refillThreshold: 250,
+      remainingPumps: 25,
+      maxPumps: 25,
+      refillThresholdPumps: 0,
       sanitizerLow: false,
       deviceState: 'IDLE',
       deviceMessage: 'System ready',
       deviceOnline: true,
+      syncHealthy: true,
+      syncFailureSimulated: false,
       systemEnabled: true,
       handDetected: false,
       lastDispenseAt: null,
-      dispenseInProgress: false
+      dispenseInProgress: false,
+      lastSyncAt: null,
+      eventTimeline: [],
+      dataSource: 'Mock data following ESP32 contract'
     };
 
     function updateTimestamp() {
@@ -328,14 +351,17 @@
     function render() {
       const remainingPercent = calculateRemainingPercent();
       document.getElementById('usageCount').textContent = state.usageCount;
-      document.getElementById('currentWeight').textContent = `${state.currentWeight} g`;
+      document.getElementById('remainingPumps').textContent = `${state.remainingPumps}`;
       document.getElementById('remainingPercent').textContent = `${remainingPercent}%`;
-      document.getElementById('refillThreshold').textContent = `${state.refillThreshold} g`;
+      document.getElementById('refillThreshold').textContent = `${state.refillThresholdPumps} pumps`;
       document.getElementById('deviceState').textContent = state.deviceState;
       document.getElementById('deviceMessage').textContent = state.deviceMessage;
       document.getElementById('handDetection').textContent = state.handDetected ? 'Valid hand detected' : 'No hand detected';
       document.getElementById('lastDispenseAt').textContent = state.lastDispenseAt || '--';
+      document.getElementById('lastSyncAt').textContent = state.lastSyncAt || '--';
+      document.getElementById('dataSource').textContent = state.dataSource;
       document.getElementById('systemEnabledToggle').checked = state.systemEnabled;
+      document.getElementById('syncFailureToggle').checked = state.syncFailureSimulated;
       document.getElementById('simulateDispenseBtn').disabled = !state.systemEnabled || state.dispenseInProgress;
       document.getElementById('manualDispenseBtn').disabled = !state.systemEnabled || state.dispenseInProgress;
 
@@ -349,19 +375,50 @@
       onlineEl.classList.remove('good', 'warn', 'bad');
       onlineEl.classList.add(state.deviceOnline ? 'good' : 'bad');
 
+      const syncEl = document.getElementById('syncStatus');
+      const syncMessageEl = document.getElementById('syncMessage');
+      syncEl.textContent = state.syncHealthy ? 'HEALTHY' : 'DEGRADED';
+      syncMessageEl.textContent = state.syncHealthy
+        ? 'Live update loop is stable'
+        : 'Sync delay detected, waiting for next successful update';
+      syncEl.classList.remove('good', 'warn', 'bad');
+      syncEl.classList.add(state.syncHealthy ? 'good' : 'warn');
+
+      const timelineEl = document.getElementById('eventTimeline');
+      if (state.eventTimeline.length === 0) {
+        timelineEl.textContent = 'No events yet.';
+      } else {
+        timelineEl.innerHTML = state.eventTimeline
+          .slice(0, 8)
+          .map((entry) => `${entry.time} - ${entry.message}`)
+          .join('<br>');
+      }
+
       updateTimestamp();
     }
 
     function calculateRemainingPercent() {
-      const usableRange = state.fullWeight - state.emptyWeight;
-      const rawPercent = ((state.currentWeight - state.emptyWeight) / usableRange) * 100;
-      return Math.max(0, Math.min(100, Math.round(rawPercent)));
+      return Math.max(0, Math.min(100, Math.round((state.remainingPumps / state.maxPumps) * 100)));
+    }
+
+    function recordEvent(message) {
+      state.eventTimeline.unshift({
+        time: new Date().toLocaleTimeString(),
+        message
+      });
+    }
+
+    function updateSyncStatus(success) {
+      state.syncHealthy = success;
+      state.deviceOnline = success;
+      state.lastSyncAt = success ? new Date().toLocaleTimeString() : state.lastSyncAt;
     }
 
     function setDisabledState() {
       state.deviceState = 'DISABLED';
       state.deviceMessage = 'System disabled from dashboard control';
       state.handDetected = false;
+      recordEvent('System disabled by operator');
       render();
     }
 
@@ -374,27 +431,32 @@
       state.handDetected = true;
       state.deviceState = 'HAND_DETECTED';
       state.deviceMessage = source === 'manual' ? 'Manual dispense requested from dashboard' : 'Valid detection confirmed';
+      recordEvent(source === 'manual' ? 'Manual dispense requested' : 'Sensor dispense requested');
       render();
 
       setTimeout(() => {
         state.deviceState = 'DISPENSING';
         state.deviceMessage = 'Servo press triggered';
+        recordEvent('Dispensing cycle started');
         render();
       }, 500);
 
       setTimeout(() => {
         state.usageCount += 1;
-        state.currentWeight = Math.max(0, state.currentWeight - 18);
+        state.remainingPumps = Math.max(0, state.remainingPumps - 1);
         state.lastDispenseAt = new Date().toLocaleTimeString();
         state.deviceState = 'WAIT STABILISE';
-        state.deviceMessage = 'Applying gated sampling and averaging';
+        state.deviceMessage = 'Applying lockout and pump-count update';
         render();
       }, 1200);
 
       setTimeout(() => {
-        state.sanitizerLow = state.currentWeight <= state.refillThreshold;
+        state.sanitizerLow = state.remainingPumps <= state.refillThresholdPumps;
         state.deviceState = state.sanitizerLow ? 'REFILL_REQUIRED' : 'UPDATE_STATUS';
         state.deviceMessage = state.sanitizerLow ? 'Low sanitizer warning generated' : 'System stable and normal';
+        if (state.sanitizerLow) {
+          recordEvent('Refill alert triggered');
+        }
         render();
       }, 2600);
 
@@ -403,28 +465,44 @@
         state.dispenseInProgress = false;
         state.deviceState = state.sanitizerLow ? 'REFILL_REQUIRED' : 'IDLE';
         state.deviceMessage = state.sanitizerLow ? 'Refill required before normal operation' : 'System ready';
+        recordEvent('Dispense cycle completed');
         render();
       }, 3600);
     }
 
     function resetAlert() {
-      state.currentWeight = state.fullWeight;
+      state.remainingPumps = state.maxPumps;
       state.sanitizerLow = false;
       state.deviceState = state.systemEnabled ? 'IDLE' : 'DISABLED';
       state.deviceMessage = 'Alert reset after refill/testing';
+      recordEvent('Refill alert reset');
       render();
     }
 
     function resetDashboard() {
       state.usageCount = 0;
-      state.currentWeight = 520;
+      state.remainingPumps = state.maxPumps;
       state.sanitizerLow = false;
       state.systemEnabled = true;
+      state.syncHealthy = true;
+      state.syncFailureSimulated = false;
+      state.deviceOnline = true;
       state.deviceState = 'IDLE';
       state.deviceMessage = 'System ready';
       state.handDetected = false;
       state.lastDispenseAt = null;
+      state.lastSyncAt = null;
       state.dispenseInProgress = false;
+      state.eventTimeline = [];
+      render();
+    }
+
+    function syncTick() {
+      const success = !state.syncFailureSimulated;
+      updateSyncStatus(success);
+      if (!success) {
+        recordEvent('Sync failure simulated');
+      }
       render();
     }
 
@@ -432,6 +510,11 @@
     document.getElementById('manualDispenseBtn').addEventListener('click', () => simulateDispense('manual'));
     document.getElementById('resetAlertBtn').addEventListener('click', resetAlert);
     document.getElementById('resetBtn').addEventListener('click', resetDashboard);
+    document.getElementById('syncFailureToggle').addEventListener('change', (event) => {
+      state.syncFailureSimulated = event.target.checked;
+      recordEvent(state.syncFailureSimulated ? 'Sync failure mode enabled' : 'Sync failure mode disabled');
+      syncTick();
+    });
     document.getElementById('systemEnabledToggle').addEventListener('change', (event) => {
       state.systemEnabled = event.target.checked;
       if (!state.systemEnabled) {
@@ -441,9 +524,11 @@
 
       state.deviceState = state.sanitizerLow ? 'REFILL_REQUIRED' : 'IDLE';
       state.deviceMessage = state.sanitizerLow ? 'Refill required before normal operation' : 'System ready';
+      recordEvent('System enabled');
       render();
     });
 
+    setInterval(syncTick, 5000);
     render();
   </script>
 </body>
