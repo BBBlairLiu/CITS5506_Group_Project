@@ -7,8 +7,8 @@ This document defines the software interface between the ESP32 firmware, the Bly
 | Field | Type | Unit | Source | Update Frequency | Description |
 | --- | --- | --- | --- | --- | --- |
 | `usageCount` | Integer | events | ESP32 state | After dispense and every 5 seconds | Total valid dispense events since reset |
-| `currentWeight` | Float | g | HX711/load cell | After stabilised reading and every 5 seconds | Latest averaged bottle weight |
-| `remainingPercent` | Integer | % | ESP32 calculation | After weight update | Estimated sanitizer remaining percentage |
+| `remainingPumps` | Integer | pumps | ESP32 pump counter | After dispense and every 5 seconds | Estimated remaining dispense actions in current refill cycle |
+| `remainingPercent` | Integer | % | ESP32 calculation | After dispense and every 5 seconds | Estimated sanitizer remaining percentage |
 | `refillAlert` | Boolean | none | ESP32 threshold logic | On change and every 5 seconds | `true` when refill is required |
 | `deviceState` | String | none | ESP32 state machine | On state change | Current software state |
 | `deviceOnline` | Boolean | none | ESP32/Blynk connection | Every 5 seconds | Whether the device is connected |
@@ -25,7 +25,7 @@ Use these values consistently in firmware and dashboard displays:
 - `HAND_DETECTED`
 - `DISPENSING`
 - `WAIT_STABILISE`
-- `READ_WEIGHT`
+- `CHECK_REFILL`
 - `UPDATE_STATUS`
 - `REFILL_REQUIRED`
 - `DISABLED`
@@ -35,26 +35,24 @@ Use these values consistently in firmware and dashboard displays:
 
 | Name | Default | Purpose |
 | --- | --- | --- |
-| `refillThreshold` | `250 g` | Trigger refill alert when weight is at or below this value |
-| `fullWeight` | `520 g` | Starting demo weight used to estimate remaining percentage |
-| `emptyWeight` | `120 g` | Approximate bottle/platform weight used for percentage calculation |
+| `maxPumps` | `25` | Number of dispense actions expected from a full refill |
+| `refillThresholdPumps` | `0` | Trigger refill alert when remaining pump count is at or below this value |
 | `dispenseLockoutMs` | `2000 ms` | Prevent repeated dispensing from one hand gesture |
 | `stabiliseDelayMs` | `1200 ms` | Wait after servo movement before reading weight |
 | `statusIntervalMs` | `5000 ms` | Regular idle dashboard update interval |
-| `weightSamples` | `10` | Number of load cell readings to average |
 
 ## Alert Logic
 
 The basic refill condition is:
 
 ```text
-refillAlert = currentWeight <= refillThreshold
+refillAlert = remainingPumps <= refillThresholdPumps
 ```
 
 The remaining percentage is:
 
 ```text
-remainingPercent = clamp((currentWeight - emptyWeight) / (fullWeight - emptyWeight) * 100, 0, 100)
+remainingPercent = clamp((remainingPumps / maxPumps) * 100, 0, 100)
 ```
 
 ## Control Inputs
@@ -67,10 +65,10 @@ remainingPercent = clamp((currentWeight - emptyWeight) / (fullWeight - emptyWeig
 
 ## Hardware-Abstraction Rule
 
-Before hardware arrives, firmware functions may return simulated values. After hardware arrives, only these hardware adapter functions should need replacement:
+Before hardware arrives, firmware functions may return simulated values. After hardware arrives, the hardware adapter functions should remain isolated:
 
 - `readHandDetected()`
 - `performDispense()`
-- `readStableWeight()`
+- `readRemainingPumps()` (or future `readStableWeight()` when HX711 is reintroduced)
 
 The state machine, Blynk virtual pin mapping, and dashboard fields should remain unchanged.

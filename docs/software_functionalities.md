@@ -8,12 +8,13 @@ The current SmartSan prototype is based on:
 - ESP32 as the main controller
 - IR sensor for hand detection
 - Servo motor for bottle pressing
-- Load cell with HX711 for sanitizer level monitoring
+- pump-count estimation for sanitizer level monitoring (HX711 can be added later)
 - Blynk dashboard as the primary mobile interface
 - Local browser interface as a mock/demo fallback
 
 The current direction is to:
-- use the weight sensor as the primary level-monitoring method
+- use pump-count as the current level-monitoring method
+- keep weight sensor integration as a future enhancement
 - keep ToF only as a backup option
 - focus first on a reliable monitoring workflow instead of advanced analytics
 - use simulated sensor values before hardware arrives so the software flow can be tested early
@@ -69,49 +70,48 @@ Each successful dispense is recorded as one valid usage event.
 
 ---
 
-### 4. Weight Reading
-The system reads bottle weight through the HX711 module and load cell.
+### 4. Remaining Pump Tracking
+The system tracks how many dispense actions are likely left in the current refill cycle.
 
 **Purpose**
-- collect raw weight data for sanitizer level monitoring
+- provide a practical remaining-level estimate before full weight-sensor integration
 
 **Input**
-- HX711 raw readings
+- successful dispense count
+- configured `MAX_PUMPS` per refill
 
 **Output**
-- `rawWeight`
-- `stableWeight`
+- `remainingPumps`
+- `remainingPercent`
 
 ---
 
-### 5. Reading Stabilisation
-The system applies basic stabilisation logic to reduce noise caused by bottle vibration during dispensing.
+### 5. Dispense Lockout and Stabilisation Window
+The system applies lockout and delay logic to avoid repeated dispensing from one gesture.
 
 **Purpose**
-- improve reliability of weight readings
-- avoid false level updates during servo motion
+- prevent accidental rapid re-triggering
+- keep event counting reliable during servo motion
 
 **Logic**
-- gated sampling after dispensing
-- averaging multiple HX711 readings
-- ignoring very small fluctuations as noise
+- lockout period after dispense
+- state transition delay before refill check
 
 **Output**
-- stable processed weight value
+- one counted event per accepted dispense cycle
 
 ---
 
 ### 6. Sanitizer Level Monitoring
-The stable weight value is compared with a refill threshold to determine whether the sanitizer level is normal or low.
+The remaining pump count is compared with a refill threshold to determine whether the sanitizer level is normal or low.
 
 **Purpose**
 - monitor remaining sanitizer level
 - support condition-based refill alerts
 
 **Input**
-- `stableWeight`
-- tare weight
-- refill threshold
+- `remainingPumps`
+- `refillThresholdPumps`
 
 **Output**
 - `sanitizerLow = true/false`
@@ -144,7 +144,7 @@ The software manages the sequence of system states so the workflow happens in th
 - `HAND_DETECTED`
 - `DISPENSING`
 - `WAIT_STABILISE`
-- `READ_WEIGHT`
+- `CHECK_REFILL`
 - `UPDATE_STATUS`
 
 ---
@@ -165,16 +165,18 @@ The ESP32 sends the latest system variables to Blynk and can also support the lo
 
 ---
 
-### 10. Web Monitoring Display
-The browser page shows the most important monitoring information for the current prototype.
+### 10. Web Monitoring Display and Sync Status
+The browser page shows key monitoring information plus sync health for testing without hardware.
 
 **Current Display Fields**
 - usage count
-- current weight
+- remaining pumps
+- remaining percentage
 - sanitizer status
 - device state
 - refill threshold
 - system message
+- sync status and event timeline
 
 ---
 
@@ -182,7 +184,7 @@ The browser page shows the most important monitoring information for the current
 
 The current minimum viable software flow is:
 
-`IR detects hand -> servo presses bottle -> usage count updates -> weight is read and stabilised -> refill status is checked -> status is sent by Wi-Fi -> browser page displays result`
+`IR detects hand -> servo presses bottle -> usage count updates -> remaining count is updated -> refill status is checked -> status is sent by Wi-Fi -> browser page displays result`
 
 ---
 
@@ -192,8 +194,8 @@ The current software priority is:
 1. hand detection
 2. dispensing control
 3. usage event recording
-4. weight reading
-5. reading stabilisation
+4. remaining pump tracking
+5. lockout and stabilisation window
 6. sanitizer level monitoring
 7. refill alert logic
 8. Wi-Fi status transmission
@@ -224,7 +226,7 @@ The software for the current SmartSan design is intended to support:
 - automatic hand detection
 - controlled dispensing
 - usage recording
-- weight-based level monitoring
+- pump-count based level monitoring
 - refill warning
 - browser-based monitoring
 
