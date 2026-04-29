@@ -4,22 +4,31 @@
   This sketch uses simulated IR and servo behaviour so the Blynk dashboard and state
   machine can be tested early. Weight sensing (HX711) is planned but currently
   replaced with pump-count logic for the prototype.
-  machine can be tested early. Set USE_MOCK_HARDWARE to 0 when the real sensors
+  Set USE_MOCK_HARDWARE to 0 when the real sensors
   are ready and replace the hardware adapter functions near the bottom.
 */
 
+// Blynk configuration - replace with actual template ID, name, and auth token from your Blynk project
 #define BLYNK_TEMPLATE_ID "REPLACE_WITH_TEMPLATE_ID"
 #define BLYNK_TEMPLATE_NAME "SmartSan Prototype"
 #define BLYNK_AUTH_TOKEN "REPLACE_WITH_DEVICE_AUTH_TOKEN"
+
 // IR sensor configuration - adjust as needed for the actual sensor and placement
 #define PIN_IR_SENSOR     2
 #define IR_ACTIVE_LOW     true
 #define IR_DEBOUNCE_MS    80
 
+// Servo configuration - adjust pin and angles as needed for the actual mechanism
+#define PIN_SERVO         5
+
+#define USE_MOCK_HARDWARE 1 // Set to 0 to use real hardware when ready, needs to be moved abouve the includes
+
+// Hardware libraries (servo only used when not in mock mode)
+#include <ESP32Servo.h>
+#endif
+
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
-
-#define USE_MOCK_HARDWARE 1 // Set to 0 to use real hardware when ready
 
 //ir sensor variables for debounce logic and stable state detection
 static bool _irLastState = false;
@@ -27,9 +36,18 @@ static bool _irStableState = false;
 static unsigned long _irLastChangeMs = 0;
 static bool _irEventConsumed = true;
 
+// Servo timing and angles - adjust as needed for the actual mechanism
+const int SERVO_HOME_DEG  = 0;
+const int SERVO_PRESS_DEG = 60;
+const int SERVO_PRESS_MS  = 400;
+const int SERVO_RETURN_MS = 300;
+const int SERVO_SETTLE_MS = 100;
+
+// WiFi credentials - replace with actual network details
 const char WIFI_SSID[] = "REPLACE_WITH_WIFI_NAME";
 const char WIFI_PASS[] = "REPLACE_WITH_WIFI_PASSWORD";
 
+// Blynk virtual pin definitions
 const int PIN_USAGE_COUNT = V0;
 const int PIN_REMAINING_PERCENT = V2;
 const int PIN_REFILL_ALERT = V3;
@@ -41,11 +59,13 @@ const int PIN_MANUAL_DISPENSE = V10;
 const int PIN_RESET_ALERT = V11;
 const int PIN_SYSTEM_ENABLED = V12;
 
+// Device and state machine variables
 const int MAX_PUMPS = 25; // TODO: calibrate by counting full bottle dispenses
 const unsigned long DISPENSE_LOCKOUT_MS = 2000;
 const unsigned long STABILISE_DELAY_MS = 1200;
 const unsigned long STATUS_INTERVAL_MS = 5000;
 
+// State machine states
 enum DeviceState {
   IDLE,
   HAND_DETECTED,
@@ -58,8 +78,12 @@ enum DeviceState {
   ERROR_STATE
 };
 
+// Global variables
 DeviceState deviceState = IDLE;
 
+#if !USE_MOCK_HARDWARE
+Servo dispenserServo; // Servo object for controlling the dispenser mechanism
+#endif
 int usageCount = 0;
 int sessionCount = 0; // 
 int remainingPumps = MAX_PUMPS;
@@ -114,7 +138,7 @@ void sendStatus() { //updading logic with pump count instead of weight
   Blynk.virtualWrite(PIN_DEVICE_ONLINE, Blynk.connected() ? 1 : 0);
 
   // NEW: raw remaining pumps
-Blynk.virtualWrite(PIN_REMAINING_PUMPS, remainingPumps); //cleaner version
+  Blynk.virtualWrite(PIN_REMAINING_PUMPS, remainingPumps); //cleaner version
 }
 
 bool canStartDispense() {
@@ -132,6 +156,13 @@ bool canStartDispense() {
 
 void startDispenseCycle() {
   if (!canStartDispense()) {
+    return;
+  }
+
+  // Prevent dispensing when empty (prototype-safe guard)
+  if (remainingPumps <= 0) {
+    Serial.println("[BLOCK] No pumps remaining");
+    setState(REFILL_REQUIRED);
     return;
   }
 
@@ -223,13 +254,20 @@ BLYNK_WRITE(V12) {
   setState(systemEnabled ? IDLE : DISABLED);
 }
 
-void setup() {
+void setup() { 
   Serial.begin(115200);
   delay(100);
 
-  pinMode(PIN_IR_SENSOR, INPUT); // Assuming the IR sensor is connected to this pin. Adjust as necessary.
+  pinMode(PIN_IR_SENSOR, INPUT); // Set IR sensor pin as input
 
-  Blynk.begin(BLYNK_AUTH_TOKEN, WIFI_SSID, WIFI_PASS);
+  Blynk.begin(BLYNK_AUTH_TOKEN, WIFI_SSID, WIFI_PASS); // Connect to WiFi and Blynk
+
+  #if !USE_MOCK_HARDWARE
+    dispenserServo.attach(PIN_SERVO); // Attach servo to pin  
+    dispenserServo.write(SERVO_HOME_DEG); // Move servo to home position
+    delay(500);
+  #endif
+
   setState(IDLE);
 }
 
@@ -244,54 +282,72 @@ void loop() {
 }
 
 bool readHandDetected() { //updated logic to use IR sensor with debounce and stable state detection, replacing the old mock logic of reading from serial input
-#if USE_MOCK_HARDWARE
-  if (Serial.available() == 0) {
-    return false;
-  }
-  char command = Serial.read();
-  return command == 'd' || command == 'D';
-
-#else
-  bool rawDetected = IR_ACTIVE_LOW
-    ? (digitalRead(PIN_IR_SENSOR) == LOW)
-    : (digitalRead(PIN_IR_SENSOR) == HIGH);
-
-  unsigned long now = millis();
-
-  if (rawDetected != _irLastState) {
-    _irLastChangeMs = now;
-    _irLastState = rawDetected;
-  }
-
-  if ((now - _irLastChangeMs) >= IR_DEBOUNCE_MS) {
-    _irStableState = _irLastState;
-  }
-
-  if (_irStableState && _irEventConsumed) {
-    _irEventConsumed = false;
-    return false;
-  }
-
-  if (_irStableState && !_irEventConsumed) {
-    _irEventConsumed = true;
-    Serial.println("[IR] Hand detected");
-    return true;
-  }
-
-  if (!_irStableState) {
-    _irEventConsumed = true;
-  }
-
+  #if USE_MOCK_HARDWARE
+    if (Serial.available() == 0) {
+      return false;
+    }
+    char command = Serial.read();
+    if (command == 'd' || command == 'D') {
+      Serial.println("[MOCK] Trigger dispense");
+      return true;
+  } 
   return false;
-#endif
+
+  #else
+    bool rawDetected = IR_ACTIVE_LOW
+      ? (digitalRead(PIN_IR_SENSOR) == LOW)
+      : (digitalRead(PIN_IR_SENSOR) == HIGH);
+
+    unsigned long now = millis();
+
+    if (rawDetected != _irLastState) {
+      _irLastChangeMs = now;
+      _irLastState = rawDetected;
+    }
+
+    if ((now - _irLastChangeMs) >= IR_DEBOUNCE_MS) {
+      _irStableState = _irLastState;
+    }
+
+    if (_irStableState && _irEventConsumed) {
+      _irEventConsumed = false;
+      return false;
+    }
+
+    if (_irStableState && !_irEventConsumed) {
+      _irEventConsumed = true;
+      Serial.println("[IR] Hand detected");
+      return true;
+    }
+
+    if (!_irStableState) {
+      _irEventConsumed = true;
+    }
+
+    return false;
+  #endif
 }
 //removed extra garbage code
 
+//updated to use servo for dispensing, replacing old mock logic of reading from serial input
 void performDispense() {
-#if USE_MOCK_HARDWARE  // use mock (no real IR yet)
-  Serial.println("Mock dispense: servo press and return");
+#if USE_MOCK_HARDWARE
+  Serial.println("[MOCK] Dispense start");
+  delay(200);
+  Serial.println("[MOCK] Dispense end");
+
 #else
-  // TODO: Replace with servo write angles and timing once the mechanism is built.
+  Serial.println("[SERVO] Press started");
+
+  delay(SERVO_SETTLE_MS);
+
+  dispenserServo.write(SERVO_PRESS_DEG);
+  delay(SERVO_PRESS_MS);
+
+  dispenserServo.write(SERVO_HOME_DEG);
+  delay(SERVO_RETURN_MS);
+
+  Serial.println("[SERVO] Cycle complete");
 #endif
 }
 
