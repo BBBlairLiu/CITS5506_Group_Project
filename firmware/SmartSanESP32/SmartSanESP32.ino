@@ -21,9 +21,10 @@
 // Servo configuration - adjust pin and angles as needed for the actual mechanism
 #define PIN_SERVO         5
 
-#define USE_MOCK_HARDWARE 1 // Set to 0 to use real hardware when ready, needs to be moved abouve the includes
+#define USE_MOCK_HARDWARE 1 // Set to 0 to use real hardware when ready
 
 // Hardware libraries (servo only used when not in mock mode)
+#if !USE_MOCK_HARDWARE // Only include servo library if not using mock hardware, to avoid unnecessary dependencies during early testing
 #include <ESP32Servo.h>
 #endif
 
@@ -34,7 +35,7 @@
 static bool _irLastState = false;
 static bool _irStableState = false;
 static unsigned long _irLastChangeMs = 0;
-static bool _dispensingActive = false; // Flag to track if a dispense cycle is active, used to prevent multiple triggers during dispensing
+static bool _dispensingActive = false;  // prevents overlapping dispense cycles
 static bool _irEventConsumed = true;
 
 // Servo timing and angles - adjust as needed for the actual mechanism
@@ -65,8 +66,10 @@ const int MAX_PUMPS = 25; // TODO: calibrate by counting full bottle dispenses
 const unsigned long DISPENSE_LOCKOUT_MS = 2000;
 const unsigned long STABILISE_DELAY_MS = 1200;
 const unsigned long STATUS_INTERVAL_MS = 5000;
-const unsigned long STABILISE_TIMEOUT_MS = 5000; // Max time to wait for weight to stabilise before proceeding, replaced with pump count logic but kept as a safeguard in case of future weight sensor integration
+const unsigned long STABILISE_TIMEOUT_MS = 5000; // watchdog timeout for dispense cycle
 const unsigned long ERROR_RECOVERY_MS = 8000; // Time to wait in error state before allowing reset, can be adjusted based on expected recovery time or user intervention needs
+
+unsigned long lastErrorLogMs = 0; // For rate-limiting error logs to avoid spamming during error conditions
 
 // State machine states
 enum DeviceState {
@@ -88,7 +91,7 @@ DeviceState deviceState = IDLE;
 Servo dispenserServo; // Servo object for controlling the dispenser mechanism
 #endif
 int usageCount = 0;
-int sessionCount = 0; // 
+int sessionCount = 0;
 int remainingPumps = MAX_PUMPS;
 bool refillAlert = false;
 bool systemEnabled = true;
@@ -121,8 +124,6 @@ String stateToString(DeviceState state) {
   }
 }
 
-//deleted weight sensor calculation, old design function is replaced with new design of pump count
-
 void setState(DeviceState nextState) {
   deviceState = nextState;
   stateStartedMs = millis();
@@ -144,7 +145,7 @@ void sendStatus() { //updading logic with pump count instead of weight
   Blynk.virtualWrite(PIN_REMAINING_PUMPS, remainingPumps); //cleaner version
 }
 
-bool canStartDispense() { // updated logic to check pump count and lockout time, replacing old weight-based logic and adding a hard lock to prevent multiple triggers during dispensing
+bool canStartDispense() { 
   // hard single-dispense lock
   if (_dispensingActive) {
     Serial.println("[GUARD] Dispense already active");
@@ -192,8 +193,11 @@ void updateStateMachine() {
   switch (deviceState) {
     case IDLE:
     case REFILL_REQUIRED:
-      if (manualDispenseRequested || readHandDetected()) {
+      if (manualDispenseRequested) {
         manualDispenseRequested = false;
+        startDispenseCycle();
+      }
+      else if (readHandDetected()) {
         startDispenseCycle();
       }
       break;
@@ -203,7 +207,7 @@ void updateStateMachine() {
       setState(DISPENSING);
       break;
 
-    case DISPENSING: // updated logic to increment pump count and calculate remaining pumps, replacing old weight-based logic
+    case DISPENSING: // update usage and remaining pump count
       if (sessionCount < MAX_PUMPS) {
         usageCount += 1;
         sessionCount += 1;
@@ -226,20 +230,7 @@ void updateStateMachine() {
       setState(WAIT_STABILISE);
       break;
 
-      remainingPumps = MAX_PUMPS - sessionCount;
-      lastDispenseMs = millis();
-
-      Serial.print("[COUNT] Total: ");
-      Serial.print(usageCount);
-      Serial.print(" | Session: ");
-      Serial.print(sessionCount);
-      Serial.print(" | Remaining: ");
-      Serial.println(remainingPumps);
-
-      setState(WAIT_STABILISE);
-      break;
-
-    case WAIT_STABILISE: // updated logic to wait for a fixed time to allow for pump action to complete and any weight changes to stabilise, replaced old weight-based stabilisation logic
+    case WAIT_STABILISE: // allow dispense cycle to fully complete before next state
 
       if (millis() - stateStartedMs >= STABILISE_DELAY_MS) {
         setState(CHECK_REFILL);
@@ -254,7 +245,7 @@ void updateStateMachine() {
 
       break;
 
-    case CHECK_REFILL: //count of uses as weight sensor is not used anymore
+    case CHECK_REFILL: 
       refillAlert = (remainingPumps <= 0);
       setState(UPDATE_STATUS);
       break;
@@ -274,7 +265,8 @@ void updateStateMachine() {
 
     case ERROR_STATE: // In error state, block all actions and require manual reset, but allow status updates to show error condition
 
-      if ((millis() / 1000) % 2 == 0) {
+      if (millis() - lastErrorLogMs >= 2000) {
+        lastErrorLogMs = millis();
         Serial.println("[ERROR] System in ERROR_STATE");
       }
 
@@ -330,6 +322,7 @@ void setup() {
     delay(500);
   #endif
 
+  _dispensingActive = false;
   setState(IDLE);
 }
 
@@ -348,13 +341,15 @@ bool readHandDetected() { //updated logic to use IR sensor with debounce and sta
     if (Serial.available() == 0) {
       return false;
     }
+
     char command = Serial.read();
+
     if (command == 'd' || command == 'D') {
       Serial.println("[MOCK] Trigger dispense");
       return true;
-  } 
-  return false;
+    }
 
+    return false;
   #else
     bool rawDetected = IR_ACTIVE_LOW
       ? (digitalRead(PIN_IR_SENSOR) == LOW)
@@ -389,7 +384,6 @@ bool readHandDetected() { //updated logic to use IR sensor with debounce and sta
     return false;
   #endif
 }
-//removed extra garbage code
 
 //updated to use servo for dispensing, replacing old mock logic of reading from serial input
 void performDispense() {
@@ -411,6 +405,4 @@ void performDispense() {
 
   Serial.println("[SERVO] Cycle complete");
 #endif
-}
-
-//removed reading of weight function due to no weight sensor
+} 
