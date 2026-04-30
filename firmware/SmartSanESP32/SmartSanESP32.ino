@@ -21,14 +21,13 @@
 // Servo configuration - adjust pin and angles as needed for the actual mechanism
 #define PIN_SERVO         5
 
-#define USE_MOCK_HARDWARE 1 // Set to 0 to use real hardware when ready, needs to be moved abouve the includes
-
-// Hardware libraries (servo only used when not in mock mode)
-#include <ESP32Servo.h>
-#endif
+#define USE_MOCK_HARDWARE 1 // Set to 0 to use real hardware when ready
 
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
+#if !USE_MOCK_HARDWARE
+#include <ESP32Servo.h>
+#endif
 
 //ir sensor variables for debounce logic and stable state detection
 static bool _irLastState = false;

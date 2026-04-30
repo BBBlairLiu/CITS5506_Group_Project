@@ -19,28 +19,29 @@ The current SmartSan design is based on:
 - **ESP32** as the main controller
 - **IR sensor** for hand detection
 - **servo motor** for bottle pressing
-- **load cell + HX711** for sanitizer level monitoring
+- **pump-count based refill estimation** for the current software prototype
 - **Blynk dashboard** as the primary mobile dashboard
 - **local browser interface** as a mock/demo fallback
 
 The current software flow is planned as:
 
-IR detects hand -> servo presses bottle -> usage count updates -> weight is read and stabilised -> refill status is checked -> status is sent to Blynk/dashboard
+IR detects hand -> servo presses bottle -> usage count updates -> remaining pump count is updated -> refill status is checked -> status is sent to Blynk/dashboard
 
 ## Dashboard Features (Mock Version)
 
 The current dashboard shows:
 - usage count
-- current weight
+- remaining pumps
 - remaining level percentage
 - sanitizer status
 - device state
 - device online state
-- refill threshold
+- refill threshold (pump count)
 - last dispense time
+- sync status and last sync time
 - last updated time
 
-It also includes demo controls for simulated sensor dispense, manual dispense, alert reset, and system enable/disable.
+It also includes demo controls for simulated sensor dispense, manual dispense, alert reset, system enable/disable, simulated sync failure, and an event timeline.
 
 ## Firmware Skeleton
 
@@ -62,6 +63,7 @@ Before uploading to an ESP32, replace the placeholder Blynk and Wi-Fi values in 
 - `docs/blynk_dashboard.md` defines the Blynk dashboard widgets and virtual pins.
 - `docs/data_contract.md` defines the fields shared between firmware and dashboard.
 - `docs/integration_test_plan.md` lists the hardware integration and evidence checklist.
+- `docs/software_test_checklist.md` lists software-only validation scenarios before hardware integration.
 
 ## How to Run
 
@@ -85,6 +87,7 @@ CITS5506_GROUP_PROJECT/
 │  ├─ blynk_dashboard.md
 │  ├─ data_contract.md
 │  ├─ integration_test_plan.md
+│  ├─ software_test_checklist.md
 │  └─ software_functionalities.md
 ├─ firmware/
 │  └─ SmartSanESP32/
