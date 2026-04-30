@@ -35,6 +35,8 @@ static bool _irLastState = false;
 static bool _irStableState = false;
 static unsigned long _irLastChangeMs = 0;
 static bool _dispensingActive = false; // Flag to track if a dispense cycle is active, used to prevent multiple triggers during dispensing
+static int _blynkFailCount = 0; // Counter to track consecutive Blynk connection failures, can be used for diagnostics or triggering alerts if needed
+static bool _blynkWasConnected = false; // Flag to track previous Blynk connection state, can be used to detect reconnections and send status updates or alerts
 static bool _irEventConsumed = true;
 
 // Servo timing and angles - adjust as needed for the actual mechanism
@@ -300,6 +302,41 @@ void updateStateMachine() {
     Serial.println("[RESET] Refill confirmed");
 
     setState(systemEnabled ? IDLE : DISABLED);
+  }
+}
+
+void handleBlynkConnection() { // Logic to detect Blynk disconnections and reconnections, allowing for status updates and diagnostics based on connection stability
+
+  bool currentlyConnected = Blynk.connected();
+
+  // reconnect detected
+  if (currentlyConnected && !_blynkWasConnected) {
+
+    Serial.println("[BLYNK] Reconnected");
+
+    _blynkFailCount = 0;
+    _blynkWasConnected = true;
+
+    sendStatus();
+    return;
+  }
+
+  // disconnect detected
+  if (!currentlyConnected) {
+
+    _blynkWasConnected = false;
+    _blynkFailCount++;
+
+    Serial.print("[BLYNK] Disconnect count: ");
+    Serial.println(_blynkFailCount);
+
+    // prevent frozen dispense lock
+    if (_dispensingActive) {
+
+      Serial.println("[BLYNK] Releasing dispense lock");
+
+      _dispensingActive = false;
+    }
   }
 }
 
