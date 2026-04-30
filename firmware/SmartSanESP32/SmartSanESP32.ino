@@ -73,19 +73,19 @@ unsigned long lastErrorLogMs = 0; // For rate-limiting error logs to avoid spamm
 
 // State machine states
 enum DeviceState {
-  IDLE,
-  HAND_DETECTED,
-  DISPENSING,
-  WAIT_STABILISE,
-  CHECK_REFILL, // renamed
-  UPDATE_STATUS,
-  REFILL_REQUIRED,
-  DISABLED,
-  ERROR_STATE
+  STATE_IDLE,
+  STATE_HAND_DETECTED,
+  STATE_DISPENSING,
+  STATE_WAIT_STABILISE,
+  STATE_CHECK_REFILL,
+  STATE_UPDATE_STATUS,
+  STATE_REFILL_REQUIRED,
+  STATE_DISABLED,
+  STATE_ERROR
 };
 
 // Global variables
-DeviceState deviceState = IDLE;
+DeviceState deviceState = STATE_IDLE;
 
 #if !USE_MOCK_HARDWARE
 Servo dispenserServo; // Servo object for controlling the dispenser mechanism
@@ -103,24 +103,27 @@ unsigned long lastStatusMs = 0;
 
 String stateToString(DeviceState state) {
   switch (state) {
-    case IDLE:
+    case STATE_IDLE:
       return "IDLE";
-    case HAND_DETECTED:
+    case STATE_HAND_DETECTED:
       return "HAND_DETECTED";
-    case DISPENSING:
+    case STATE_DISPENSING:
       return "DISPENSING";
-    case WAIT_STABILISE:
+    case STATE_WAIT_STABILISE:
       return "WAIT_STABILISE";
-    case CHECK_REFILL:
+    case STATE_CHECK_REFILL:
       return "CHECK_REFILL";
-    case UPDATE_STATUS:
+    case STATE_UPDATE_STATUS:
       return "UPDATE_STATUS";
-    case REFILL_REQUIRED:
+    case STATE_REFILL_REQUIRED:
       return "REFILL_REQUIRED";
-    case DISABLED:
+    case STATE_DISABLED:
       return "DISABLED";
-    default:
+    case STATE_ERROR:
       return "ERROR";
+    default:
+      Serial.println("[WARN] Unknown DeviceState encountered");
+      return "UNKNOWN_STATE";
   }
 }
 
@@ -130,7 +133,7 @@ void setState(DeviceState nextState) {
   sendStatus();
 }
 
-void sendStatus() { //updading logic with pump count instead of weight
+void sendStatus() { //updating logic with pump count instead of weight
   int remainingPercent = (remainingPumps * 100) / MAX_PUMPS;
   remainingPercent = constrain(remainingPercent, 0, 100);
 
@@ -164,13 +167,13 @@ bool canStartDispense() {
     return false;
   }
 
-  return deviceState == IDLE || deviceState == REFILL_REQUIRED;
+  return deviceState == STATE_IDLE || deviceState == STATE_REFILL_REQUIRED;
 }
 
 void startDispenseCycle() { // updated to check if dispense can start, and set active flag to prevent multiple triggers during dispensing
 
   if (!systemEnabled) {
-    setState(DISABLED);
+    setState(STATE_DISABLED);
     return;
   }
 
@@ -178,7 +181,7 @@ void startDispenseCycle() { // updated to check if dispense can start, and set a
 
     if (remainingPumps <= 0) {
       Serial.println("[BLOCK] Bottle empty");
-      setState(REFILL_REQUIRED);
+      setState(STATE_REFILL_REQUIRED);
     }
 
     return;
@@ -186,13 +189,13 @@ void startDispenseCycle() { // updated to check if dispense can start, and set a
 
   _dispensingActive = true;
 
-  setState(HAND_DETECTED);
+  setState(STATE_HAND_DETECTED);
 }
 
 void updateStateMachine() {
   switch (deviceState) {
-    case IDLE:
-    case REFILL_REQUIRED:
+    case STATE_IDLE:
+    case STATE_REFILL_REQUIRED:
       if (manualDispenseRequested) {
         manualDispenseRequested = false;
         startDispenseCycle();
@@ -202,12 +205,12 @@ void updateStateMachine() {
       }
       break;
 
-    case HAND_DETECTED:
+    case STATE_HAND_DETECTED:
       performDispense();
-      setState(DISPENSING);
+      setState(STATE_DISPENSING);
       break;
 
-    case DISPENSING: // update usage and remaining pump count
+    case STATE_DISPENSING: // update usage and remaining pump count
       if (sessionCount < MAX_PUMPS) {
         usageCount += 1;
         sessionCount += 1;
@@ -227,47 +230,47 @@ void updateStateMachine() {
       Serial.print(" | Remaining: ");
       Serial.println(remainingPumps);
 
-      setState(WAIT_STABILISE);
+      setState(STATE_WAIT_STABILISE);
       break;
 
-    case WAIT_STABILISE: // allow dispense cycle to fully complete before next state
+    case STATE_WAIT_STABILISE: // allow dispense cycle to fully complete before next state
 
       if (millis() - stateStartedMs >= STABILISE_DELAY_MS) {
-        setState(CHECK_REFILL);
+        setState(STATE_CHECK_REFILL);
         break;
       }
 
       // watchdog protection
       if (millis() - stateStartedMs >= STABILISE_TIMEOUT_MS) {
         Serial.println("[ERROR] WAIT_STABILISE timeout");
-        setState(ERROR_STATE);
+        setState(STATE_ERROR);
       }
 
       break;
 
-    case CHECK_REFILL: 
+    case STATE_CHECK_REFILL: 
       refillAlert = (remainingPumps <= 0);
-      setState(UPDATE_STATUS);
+      setState(STATE_UPDATE_STATUS);
       break;
 
-    case UPDATE_STATUS:
-      setState(refillAlert ? REFILL_REQUIRED : IDLE);
+    case STATE_UPDATE_STATUS:
+      setState(refillAlert ? STATE_REFILL_REQUIRED : STATE_IDLE);
       break;
 
-    case DISABLED: // Ensure system is fully inactive and reset session count, but keep total usage for stats
+    case STATE_DISABLED: // Ensure system is fully inactive and reset session count, but keep total usage for stats
       _dispensingActive = false;
 
       if (systemEnabled) {
-        setState(refillAlert ? REFILL_REQUIRED : IDLE);
+        setState(refillAlert ? STATE_REFILL_REQUIRED : STATE_IDLE);
       }
 
       break;
 
-    case ERROR_STATE: // In error state, block all actions and require manual reset, but allow status updates to show error condition
+    case STATE_ERROR: // In error state, block all actions and require manual reset, but allow status updates to show error condition
 
       if (millis() - lastErrorLogMs >= 2000) {
         lastErrorLogMs = millis();
-        Serial.println("[ERROR] System in ERROR_STATE");
+        Serial.println("[ERROR] System in STATE_ERROR");
       }
 
       if (millis() - stateStartedMs >= ERROR_RECOVERY_MS) {
@@ -276,7 +279,7 @@ void updateStateMachine() {
 
         _dispensingActive = false;
 
-        setState(systemEnabled ? IDLE : DISABLED);
+        setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
       }
 
       break;
@@ -291,7 +294,7 @@ void updateStateMachine() {
 
     Serial.println("[RESET] Refill confirmed");
 
-    setState(systemEnabled ? IDLE : DISABLED);
+    setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
   }
 }
 
@@ -305,7 +308,7 @@ BLYNK_WRITE(V11) {
 
 BLYNK_WRITE(V12) {
   systemEnabled = param.asInt() == 1;
-  setState(systemEnabled ? IDLE : DISABLED);
+  setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
 }
 
 void setup() { 
@@ -323,7 +326,7 @@ void setup() {
   #endif
 
   _dispensingActive = false;
-  setState(IDLE);
+  setState(STATE_IDLE);
 }
 
 void loop() {
