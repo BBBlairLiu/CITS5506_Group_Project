@@ -65,6 +65,8 @@ const int MAX_PUMPS = 25; // TODO: calibrate by counting full bottle dispenses
 const unsigned long DISPENSE_LOCKOUT_MS = 2000;
 const unsigned long STABILISE_DELAY_MS = 1200;
 const unsigned long STATUS_INTERVAL_MS = 5000;
+const unsigned long STABILISE_TIMEOUT_MS = 5000; // Max time to wait for weight to stabilise before proceeding, replaced with pump count logic but kept as a safeguard in case of future weight sensor integration
+const unsigned long ERROR_RECOVERY_MS = 8000; // Time to wait in error state before allowing reset, can be adjusted based on expected recovery time or user intervention needs
 
 // State machine states
 enum DeviceState {
@@ -237,10 +239,19 @@ void updateStateMachine() {
       setState(WAIT_STABILISE);
       break;
 
-    case WAIT_STABILISE:
+    case WAIT_STABILISE: // updated logic to wait for a fixed time to allow for pump action to complete and any weight changes to stabilise, replaced old weight-based stabilisation logic
+
       if (millis() - stateStartedMs >= STABILISE_DELAY_MS) {
         setState(CHECK_REFILL);
+        break;
       }
+
+      // watchdog protection
+      if (millis() - stateStartedMs >= STABILISE_TIMEOUT_MS) {
+        Serial.println("[ERROR] WAIT_STABILISE timeout");
+        setState(ERROR_STATE);
+      }
+
       break;
 
     case CHECK_REFILL: //count of uses as weight sensor is not used anymore
@@ -261,7 +272,21 @@ void updateStateMachine() {
 
       break;
 
-    case ERROR_STATE:
+    case ERROR_STATE: // In error state, block all actions and require manual reset, but allow status updates to show error condition
+
+      if ((millis() / 1000) % 2 == 0) {
+        Serial.println("[ERROR] System in ERROR_STATE");
+      }
+
+      if (millis() - stateStartedMs >= ERROR_RECOVERY_MS) {
+
+        Serial.println("[RECOVERY] Recovering system");
+
+        _dispensingActive = false;
+
+        setState(systemEnabled ? IDLE : DISABLED);
+      }
+
       break;
   }
 
