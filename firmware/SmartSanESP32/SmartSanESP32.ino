@@ -34,6 +34,7 @@
 static bool _irLastState = false;
 static bool _irStableState = false;
 static unsigned long _irLastChangeMs = 0;
+static bool _dispensingActive = false; // Flag to track if a dispense cycle is active, used to prevent multiple triggers during dispensing
 static bool _irEventConsumed = true;
 
 // Servo timing and angles - adjust as needed for the actual mechanism
@@ -141,9 +142,14 @@ void sendStatus() { //updading logic with pump count instead of weight
   Blynk.virtualWrite(PIN_REMAINING_PUMPS, remainingPumps); //cleaner version
 }
 
-bool canStartDispense() {
+bool canStartDispense() { // updated logic to check pump count and lockout time, replacing old weight-based logic and adding a hard lock to prevent multiple triggers during dispensing
+  // hard single-dispense lock
+  if (_dispensingActive) {
+    Serial.println("[GUARD] Dispense already active");
+    return false;
+  }
+
   if (!systemEnabled) {
-    setState(DISABLED);
     return false;
   }
 
@@ -151,20 +157,31 @@ bool canStartDispense() {
     return false;
   }
 
+  if (remainingPumps <= 0) {
+    return false;
+  }
+
   return deviceState == IDLE || deviceState == REFILL_REQUIRED;
 }
 
-void startDispenseCycle() {
-  if (!canStartDispense()) {
+void startDispenseCycle() { // updated to check if dispense can start, and set active flag to prevent multiple triggers during dispensing
+
+  if (!systemEnabled) {
+    setState(DISABLED);
     return;
   }
 
-  // Prevent dispensing when empty (prototype-safe guard)
-  if (remainingPumps <= 0) {
-    Serial.println("[BLOCK] No pumps remaining");
-    setState(REFILL_REQUIRED);
+  if (!canStartDispense()) {
+
+    if (remainingPumps <= 0) {
+      Serial.println("[BLOCK] Bottle empty");
+      setState(REFILL_REQUIRED);
+    }
+
     return;
   }
+
+  _dispensingActive = true;
 
   setState(HAND_DETECTED);
 }
@@ -184,11 +201,28 @@ void updateStateMachine() {
       setState(DISPENSING);
       break;
 
-    case DISPENSING: //pump count logic added for remaining hand sanitiser estimation, rather than weight logic
+    case DISPENSING: // updated logic to increment pump count and calculate remaining pumps, replacing old weight-based logic
       if (sessionCount < MAX_PUMPS) {
         usageCount += 1;
         sessionCount += 1;
       }
+
+      remainingPumps = MAX_PUMPS - sessionCount;
+
+      lastDispenseMs = millis();
+
+      // release dispense lock
+      _dispensingActive = false;
+
+      Serial.print("[COUNT] Total: ");
+      Serial.print(usageCount);
+      Serial.print(" | Session: ");
+      Serial.print(sessionCount);
+      Serial.print(" | Remaining: ");
+      Serial.println(remainingPumps);
+
+      setState(WAIT_STABILISE);
+      break;
 
       remainingPumps = MAX_PUMPS - sessionCount;
       lastDispenseMs = millis();
@@ -218,10 +252,13 @@ void updateStateMachine() {
       setState(refillAlert ? REFILL_REQUIRED : IDLE);
       break;
 
-    case DISABLED:
+    case DISABLED: // Ensure system is fully inactive and reset session count, but keep total usage for stats
+      _dispensingActive = false;
+
       if (systemEnabled) {
         setState(refillAlert ? REFILL_REQUIRED : IDLE);
       }
+
       break;
 
     case ERROR_STATE:
