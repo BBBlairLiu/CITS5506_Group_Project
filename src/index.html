@@ -232,7 +232,7 @@
       <div class="card">
         <h2>Remaining Level</h2>
         <p class="metric" id="remainingPercent">0%</p>
-        <div class="subtext">Estimated from full and empty weight</div>
+        <div class="subtext">Estimated from remaining pumps</div>
       </div>
 
       <div class="card">
@@ -319,6 +319,36 @@
       <h2>Event Timeline</h2>
       <div id="eventTimeline" class="subtext">No events yet.</div>
     </section>
+
+    <section class="panel-grid" style="margin-top: 16px;">
+      <div class="card">
+        <h2>Session Summary</h2>
+        <div class="row">
+          <div class="label">Session Dispenses</div>
+          <div class="value" id="sessionDispenses">0</div>
+        </div>
+        <div class="row">
+          <div class="label">Usage Intensity</div>
+          <div class="value" id="usageIntensity">LOW</div>
+        </div>
+        <div class="row">
+          <div class="label">Session Start</div>
+          <div class="value" id="sessionStartAt">--</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Rule-based Insights</h2>
+        <div class="row">
+          <div class="label">Refill Risk</div>
+          <div class="value" id="refillRisk">LOW</div>
+        </div>
+        <div class="row">
+          <div class="label">Operator Hint</div>
+          <div class="value" id="operatorHint">No action needed</div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <script>
@@ -338,6 +368,8 @@
       lastDispenseAt: null,
       dispenseInProgress: false,
       lastSyncAt: null,
+      sessionDispenses: 0,
+      sessionStartAt: null,
       eventTimeline: [],
       dataSource: 'Mock data following ESP32 contract'
     };
@@ -360,6 +392,9 @@
       document.getElementById('lastDispenseAt').textContent = state.lastDispenseAt || '--';
       document.getElementById('lastSyncAt').textContent = state.lastSyncAt || '--';
       document.getElementById('dataSource').textContent = state.dataSource;
+      document.getElementById('sessionDispenses').textContent = state.sessionDispenses;
+      document.getElementById('usageIntensity').textContent = getUsageIntensity();
+      document.getElementById('sessionStartAt').textContent = state.sessionStartAt || '--';
       document.getElementById('systemEnabledToggle').checked = state.systemEnabled;
       document.getElementById('syncFailureToggle').checked = state.syncFailureSimulated;
       document.getElementById('simulateDispenseBtn').disabled = !state.systemEnabled || state.dispenseInProgress;
@@ -384,6 +419,11 @@
       syncEl.classList.remove('good', 'warn', 'bad');
       syncEl.classList.add(state.syncHealthy ? 'good' : 'warn');
 
+      const refillRisk = calculateRefillRisk();
+      const operatorHint = calculateOperatorHint(refillRisk);
+      document.getElementById('refillRisk').textContent = refillRisk;
+      document.getElementById('operatorHint').textContent = operatorHint;
+
       const timelineEl = document.getElementById('eventTimeline');
       if (state.eventTimeline.length === 0) {
         timelineEl.textContent = 'No events yet.';
@@ -399,6 +439,53 @@
 
     function calculateRemainingPercent() {
       return Math.max(0, Math.min(100, Math.round((state.remainingPumps / state.maxPumps) * 100)));
+    }
+
+    function calculateRefillRisk() {
+      if (state.sanitizerLow || state.remainingPumps <= state.refillThresholdPumps) {
+        return 'CRITICAL';
+      }
+
+      const remainingPercent = calculateRemainingPercent();
+      if (remainingPercent <= 20) {
+        return 'HIGH';
+      }
+      if (remainingPercent <= 40) {
+        return 'MEDIUM';
+      }
+
+      return 'LOW';
+    }
+
+    function calculateOperatorHint(refillRisk) {
+      if (!state.systemEnabled) {
+        return 'Enable system to allow dispensing';
+      }
+      if (!state.syncHealthy) {
+        return 'Check Wi-Fi/Blynk connectivity';
+      }
+      if (refillRisk === 'CRITICAL') {
+        return 'Refill required now and reset alert';
+      }
+      if (refillRisk === 'HIGH') {
+        return 'Prepare refill soon';
+      }
+      if (state.deviceState === 'ERROR') {
+        return 'Inspect device and run recovery';
+      }
+
+      return 'No action needed';
+    }
+
+    function getUsageIntensity() {
+      if (state.sessionDispenses >= 10) {
+        return 'HIGH';
+      }
+      if (state.sessionDispenses >= 4) {
+        return 'MEDIUM';
+      }
+
+      return 'LOW';
     }
 
     function recordEvent(message) {
@@ -427,6 +514,10 @@
         return;
       }
 
+      if (!state.sessionStartAt) {
+        state.sessionStartAt = new Date().toLocaleTimeString();
+      }
+
       state.dispenseInProgress = true;
       state.handDetected = true;
       state.deviceState = 'HAND_DETECTED';
@@ -443,6 +534,7 @@
 
       setTimeout(() => {
         state.usageCount += 1;
+        state.sessionDispenses += 1;
         state.remainingPumps = Math.max(0, state.remainingPumps - 1);
         state.lastDispenseAt = new Date().toLocaleTimeString();
         state.deviceState = 'WAIT STABILISE';
@@ -475,6 +567,8 @@
       state.sanitizerLow = false;
       state.deviceState = state.systemEnabled ? 'IDLE' : 'DISABLED';
       state.deviceMessage = 'Alert reset after refill/testing';
+      state.sessionDispenses = 0;
+      state.sessionStartAt = new Date().toLocaleTimeString();
       recordEvent('Refill alert reset');
       render();
     }
@@ -492,6 +586,8 @@
       state.handDetected = false;
       state.lastDispenseAt = null;
       state.lastSyncAt = null;
+      state.sessionDispenses = 0;
+      state.sessionStartAt = null;
       state.dispenseInProgress = false;
       state.eventTimeline = [];
       render();
@@ -529,6 +625,8 @@
     });
 
     setInterval(syncTick, 5000);
+    state.sessionDispenses = 0;
+    state.sessionStartAt = new Date().toLocaleTimeString();
     render();
   </script>
 </body>

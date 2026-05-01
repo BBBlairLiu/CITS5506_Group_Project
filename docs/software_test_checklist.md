@@ -28,9 +28,18 @@ This checklist focuses on software functionality that can be validated before fu
 | SW-10 | Re-enable system | Turn on `System enabled` | State returns to `IDLE` or `REFILL_REQUIRED` based on alert status |
 | SW-11 | Dashboard reset | Click `Reset Dashboard` | Counters, status, sync, and timeline reset to defaults |
 
+## Low-Data Demo Features
+
+| Test ID | Scenario | Steps | Expected Result |
+| --- | --- | --- | --- |
+| SW-12 | Session summary update | Run 3-5 dispense cycles | `Session Dispenses` increments and `Usage Intensity` updates from LOW to MEDIUM |
+| SW-13 | Rule-based refill risk | Reduce remaining pumps to low values | `Refill Risk` changes from LOW/MEDIUM/HIGH/CRITICAL according to remaining percentage |
+| SW-14 | Operator hint behavior | Toggle sync failure, disable system, and trigger refill required | `Operator Hint` updates to actionable guidance for each state |
+
 ## Evidence to Capture
 
 - 1 screenshot for normal dispense flow (`SW-01`).
 - 1 screenshot for refill alert (`SW-04`).
 - 1 screenshot for degraded sync and recovery (`SW-07`, `SW-08`).
 - 1 short video showing disabled/enabled safety lock behavior (`SW-09`, `SW-10`).
+- 1 screenshot showing session summary + rule-based insights (`SW-12`, `SW-13`, `SW-14`).
