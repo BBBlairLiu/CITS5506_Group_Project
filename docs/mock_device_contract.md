@@ -96,18 +96,15 @@ state=REFILL_REQUIRED
 
 # Mock Trace 3 — Recovery / Reset
 
-t=0s  
-state=REFILL_REQUIRED  
-remainingPumps=0  
+t=0s
+state=REFILL_REQUIRED
+remainingPumps=0
 refillAlert=true
 
-t=1s  
+t=1s
 resetAlert=true
 
-t=2s  
-state=UPDATE_STATUS  
-remainingPumps=25  
-refillAlert=false
-
-t=3s  
+t=2s
 state=IDLE
+remainingPumps=25
+refillAlert=false

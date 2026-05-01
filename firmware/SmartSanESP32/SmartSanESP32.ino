@@ -292,6 +292,8 @@ void updateStateMachine() {
     remainingPumps = MAX_PUMPS;
     refillAlert = false;
 
+    _dispensingActive = false;  // FIX: unlock dispensing state
+
     Serial.println("[RESET] Refill confirmed");
 
     setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
