@@ -23,16 +23,19 @@
 
 #define USE_MOCK_HARDWARE 1 // Set to 0 to use real hardware when ready
 
-#include <WiFi.h>
-#include <BlynkSimpleEsp32.h>
-#if !USE_MOCK_HARDWARE
+// Hardware libraries (servo only used when not in mock mode)
+#if !USE_MOCK_HARDWARE // Only include servo library if not using mock hardware, to avoid unnecessary dependencies during early testing
 #include <ESP32Servo.h>
 #endif
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
 
 //ir sensor variables for debounce logic and stable state detection
 static bool _irLastState = false;
 static bool _irStableState = false;
 static unsigned long _irLastChangeMs = 0;
+static bool _dispensingActive = false;  // prevents overlapping dispense cycles
 static bool _irEventConsumed = true;
 
 // Servo timing and angles - adjust as needed for the actual mechanism
@@ -63,28 +66,32 @@ const int MAX_PUMPS = 25; // TODO: calibrate by counting full bottle dispenses
 const unsigned long DISPENSE_LOCKOUT_MS = 2000;
 const unsigned long STABILISE_DELAY_MS = 1200;
 const unsigned long STATUS_INTERVAL_MS = 5000;
+const unsigned long STABILISE_TIMEOUT_MS = 5000; // watchdog timeout for dispense cycle
+const unsigned long ERROR_RECOVERY_MS = 8000; // Time to wait in error state before allowing reset, can be adjusted based on expected recovery time or user intervention needs
+
+unsigned long lastErrorLogMs = 0; // For rate-limiting error logs to avoid spamming during error conditions
 
 // State machine states
 enum DeviceState {
-  IDLE,
-  HAND_DETECTED,
-  DISPENSING,
-  WAIT_STABILISE,
-  CHECK_REFILL, // renamed
-  UPDATE_STATUS,
-  REFILL_REQUIRED,
-  DISABLED,
-  ERROR_STATE
+  STATE_IDLE,
+  STATE_HAND_DETECTED,
+  STATE_DISPENSING,
+  STATE_WAIT_STABILISE,
+  STATE_CHECK_REFILL,
+  STATE_UPDATE_STATUS,
+  STATE_REFILL_REQUIRED,
+  STATE_DISABLED,
+  STATE_ERROR
 };
 
 // Global variables
-DeviceState deviceState = IDLE;
+DeviceState deviceState = STATE_IDLE;
 
 #if !USE_MOCK_HARDWARE
 Servo dispenserServo; // Servo object for controlling the dispenser mechanism
 #endif
 int usageCount = 0;
-int sessionCount = 0; // 
+int sessionCount = 0;
 int remainingPumps = MAX_PUMPS;
 bool refillAlert = false;
 bool systemEnabled = true;
@@ -96,28 +103,29 @@ unsigned long lastStatusMs = 0;
 
 String stateToString(DeviceState state) {
   switch (state) {
-    case IDLE:
+    case STATE_IDLE:
       return "IDLE";
-    case HAND_DETECTED:
+    case STATE_HAND_DETECTED:
       return "HAND_DETECTED";
-    case DISPENSING:
+    case STATE_DISPENSING:
       return "DISPENSING";
-    case WAIT_STABILISE:
+    case STATE_WAIT_STABILISE:
       return "WAIT_STABILISE";
-    case CHECK_REFILL:
+    case STATE_CHECK_REFILL:
       return "CHECK_REFILL";
-    case UPDATE_STATUS:
+    case STATE_UPDATE_STATUS:
       return "UPDATE_STATUS";
-    case REFILL_REQUIRED:
+    case STATE_REFILL_REQUIRED:
       return "REFILL_REQUIRED";
-    case DISABLED:
+    case STATE_DISABLED:
       return "DISABLED";
-    default:
+    case STATE_ERROR:
       return "ERROR";
+    default:
+      Serial.println("[WARN] Unknown DeviceState encountered");
+      return "UNKNOWN_STATE";
   }
 }
-
-//deleted weight sensor calculation, old design function is replaced with new design of pump count
 
 void setState(DeviceState nextState) {
   deviceState = nextState;
@@ -125,7 +133,7 @@ void setState(DeviceState nextState) {
   sendStatus();
 }
 
-void sendStatus() { //updading logic with pump count instead of weight
+void sendStatus() { //updating logic with pump count instead of weight
   int remainingPercent = (remainingPumps * 100) / MAX_PUMPS;
   remainingPercent = constrain(remainingPercent, 0, 100);
 
@@ -140,9 +148,14 @@ void sendStatus() { //updading logic with pump count instead of weight
   Blynk.virtualWrite(PIN_REMAINING_PUMPS, remainingPumps); //cleaner version
 }
 
-bool canStartDispense() {
+bool canStartDispense() { 
+  // hard single-dispense lock
+  if (_dispensingActive) {
+    Serial.println("[GUARD] Dispense already active");
+    return false;
+  }
+
   if (!systemEnabled) {
-    setState(DISABLED);
     return false;
   }
 
@@ -150,47 +163,65 @@ bool canStartDispense() {
     return false;
   }
 
-  return deviceState == IDLE || deviceState == REFILL_REQUIRED;
+  if (remainingPumps <= 0) {
+    return false;
+  }
+
+  return deviceState == STATE_IDLE || deviceState == STATE_REFILL_REQUIRED;
 }
 
-void startDispenseCycle() {
+void startDispenseCycle() { // updated to check if dispense can start, and set active flag to prevent multiple triggers during dispensing
+
+  if (!systemEnabled) {
+    setState(STATE_DISABLED);
+    return;
+  }
+
   if (!canStartDispense()) {
+
+    if (remainingPumps <= 0) {
+      Serial.println("[BLOCK] Bottle empty");
+      setState(STATE_REFILL_REQUIRED);
+    }
+
     return;
   }
 
-  // Prevent dispensing when empty (prototype-safe guard)
-  if (remainingPumps <= 0) {
-    Serial.println("[BLOCK] No pumps remaining");
-    setState(REFILL_REQUIRED);
-    return;
-  }
+  _dispensingActive = true;
 
-  setState(HAND_DETECTED);
+  setState(STATE_HAND_DETECTED);
 }
 
 void updateStateMachine() {
   switch (deviceState) {
-    case IDLE:
-    case REFILL_REQUIRED:
-      if (manualDispenseRequested || readHandDetected()) {
+    case STATE_IDLE:
+    case STATE_REFILL_REQUIRED:
+      if (manualDispenseRequested) {
         manualDispenseRequested = false;
+        startDispenseCycle();
+      }
+      else if (readHandDetected()) {
         startDispenseCycle();
       }
       break;
 
-    case HAND_DETECTED:
+    case STATE_HAND_DETECTED:
       performDispense();
-      setState(DISPENSING);
+      setState(STATE_DISPENSING);
       break;
 
-    case DISPENSING: //pump count logic added for remaining hand sanitiser estimation, rather than weight logic
+    case STATE_DISPENSING: // update usage and remaining pump count
       if (sessionCount < MAX_PUMPS) {
         usageCount += 1;
         sessionCount += 1;
       }
 
       remainingPumps = MAX_PUMPS - sessionCount;
+
       lastDispenseMs = millis();
+
+      // release dispense lock
+      _dispensingActive = false;
 
       Serial.print("[COUNT] Total: ");
       Serial.print(usageCount);
@@ -199,31 +230,58 @@ void updateStateMachine() {
       Serial.print(" | Remaining: ");
       Serial.println(remainingPumps);
 
-      setState(WAIT_STABILISE);
+      setState(STATE_WAIT_STABILISE);
       break;
 
-    case WAIT_STABILISE:
+    case STATE_WAIT_STABILISE: // allow dispense cycle to fully complete before next state
+
       if (millis() - stateStartedMs >= STABILISE_DELAY_MS) {
-        setState(CHECK_REFILL);
+        setState(STATE_CHECK_REFILL);
+        break;
       }
+
+      // watchdog protection
+      if (millis() - stateStartedMs >= STABILISE_TIMEOUT_MS) {
+        Serial.println("[ERROR] WAIT_STABILISE timeout");
+        setState(STATE_ERROR);
+      }
+
       break;
 
-    case CHECK_REFILL: //count of uses as weight sensor is not used anymore
+    case STATE_CHECK_REFILL: 
       refillAlert = (remainingPumps <= 0);
-      setState(UPDATE_STATUS);
+      setState(STATE_UPDATE_STATUS);
       break;
 
-    case UPDATE_STATUS:
-      setState(refillAlert ? REFILL_REQUIRED : IDLE);
+    case STATE_UPDATE_STATUS:
+      setState(refillAlert ? STATE_REFILL_REQUIRED : STATE_IDLE);
       break;
 
-    case DISABLED:
+    case STATE_DISABLED: // Ensure system is fully inactive and reset session count, but keep total usage for stats
+      _dispensingActive = false;
+
       if (systemEnabled) {
-        setState(refillAlert ? REFILL_REQUIRED : IDLE);
+        setState(refillAlert ? STATE_REFILL_REQUIRED : STATE_IDLE);
       }
+
       break;
 
-    case ERROR_STATE:
+    case STATE_ERROR: // In error state, block all actions and require manual reset, but allow status updates to show error condition
+
+      if (millis() - lastErrorLogMs >= 2000) {
+        lastErrorLogMs = millis();
+        Serial.println("[ERROR] System in STATE_ERROR");
+      }
+
+      if (millis() - stateStartedMs >= ERROR_RECOVERY_MS) {
+
+        Serial.println("[RECOVERY] Recovering system");
+
+        _dispensingActive = false;
+
+        setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
+      }
+
       break;
   }
 
@@ -234,9 +292,11 @@ void updateStateMachine() {
     remainingPumps = MAX_PUMPS;
     refillAlert = false;
 
+    _dispensingActive = false;  // FIX: unlock dispensing state
+
     Serial.println("[RESET] Refill confirmed");
 
-    setState(systemEnabled ? IDLE : DISABLED);
+    setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
   }
 }
 
@@ -250,7 +310,7 @@ BLYNK_WRITE(V11) {
 
 BLYNK_WRITE(V12) {
   systemEnabled = param.asInt() == 1;
-  setState(systemEnabled ? IDLE : DISABLED);
+  setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
 }
 
 void setup() { 
@@ -267,7 +327,8 @@ void setup() {
     delay(500);
   #endif
 
-  setState(IDLE);
+  _dispensingActive = false;
+  setState(STATE_IDLE);
 }
 
 void loop() {
@@ -285,13 +346,15 @@ bool readHandDetected() { //updated logic to use IR sensor with debounce and sta
     if (Serial.available() == 0) {
       return false;
     }
+
     char command = Serial.read();
+
     if (command == 'd' || command == 'D') {
       Serial.println("[MOCK] Trigger dispense");
       return true;
-  } 
-  return false;
+    }
 
+    return false;
   #else
     bool rawDetected = IR_ACTIVE_LOW
       ? (digitalRead(PIN_IR_SENSOR) == LOW)
@@ -326,7 +389,6 @@ bool readHandDetected() { //updated logic to use IR sensor with debounce and sta
     return false;
   #endif
 }
-//removed extra garbage code
 
 //updated to use servo for dispensing, replacing old mock logic of reading from serial input
 void performDispense() {
@@ -348,6 +410,4 @@ void performDispense() {
 
   Serial.println("[SERVO] Cycle complete");
 #endif
-}
-
-//removed reading of weight function due to no weight sensor
+} 
