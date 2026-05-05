@@ -77,6 +77,20 @@
     canvas#usageChart { width: 100% !important; height: 120px !important; }
     .graph-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace; }
 
+    .panel-grid { display: flex; flex-direction: column; gap: 14px; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+
+    .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); font-family: 'DM Mono', monospace; margin-bottom: 16px; }
+
+    .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+
+    .row:last-child { border-bottom: none; }
+
+    .label { color: var(--muted); font-size: 13px; }
+
+    .value { font-family: 'DM Mono', monospace; font-size: 12px; }
+
     /* Feed */
     .feed-list { display: flex; flex-direction: column; gap: 1px; max-height: 260px; overflow-y: auto; }
     .feed-list::-webkit-scrollbar { width: 4px; }
@@ -123,6 +137,29 @@
     .toast-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     @keyframes fadeOut { to { opacity: 0; transform: translateX(10px); } }
+
+    @media (max-width: 1200px) {
+      .shell { grid-template-columns: 180px 1fr; }
+      .stat-row { grid-template-columns: repeat(3, 1fr); }
+      .main-grid { grid-template-columns: 1fr 1fr; }
+      .bottom-grid { grid-template-columns: repeat(2, 1fr); }
+      .panel-grid { flex-direction: column; }
+    }
+
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .stat-row,
+      .main-grid,
+      .bottom-grid {
+        grid-template-columns: 1fr;
+      }
+      .content { padding: 16px; }
+      .topbar { padding: 14px 16px; }
+      .panel, .stat-card, .card { padding: 16px; }
+      .prediction-time { font-size: 34px; }
+      .topbar-right { gap: 8px; }
+    }
   </style>
 </head>
 <body>
@@ -200,11 +237,10 @@
           </div>
           <div class="level-bar-wrap">
             <div class="level-bar-track">
-              <div id="levelBarFill" class="level-bar-fill" style="width:40%; background:var(--green)"></div>
+              <div class="level-bar-fill" id="levelBarFill" style="width:100%; background:var(--green);"></div>
             </div>
             <div class="level-label">
-              <span id="levelBarLabel">40% · 10 pumps</span>
-              <span id="levelBarHint" style="color:var(--muted)">est. time-to-empty</span>
+              <span>Empty</span><span id="levelBarLabel">100% · 25 pumps</span><span>Full</span>
             </div>
           </div>
           <div class="prediction-rows">
@@ -236,49 +272,80 @@
         <div class="panel">
           <div class="panel-title">Operator Controls</div>
           <div class="ctrl-stack">
-            <button id="btnSensor" class="ctrl-btn">Trigger sensor dispense</button>
-            <button id="btnManual" class="ctrl-btn">Manual dispense</button>
-            <button id="btnReset" class="ctrl-btn">Refill confirm / reset</button>
-            <button id="btnFullReset" class="ctrl-btn danger">Full dashboard reset</button>
-            <div class="ctrl-toggle"><span>Enable system</span><label class="toggle-switch"><input id="toggleEnabled" type="checkbox" checked><span class="slider"></span></label></div>
-            <div class="ctrl-toggle"><span>Simulate sync fail</span><label class="toggle-switch"><input id="toggleSyncFail" type="checkbox"><span class="slider"></span></label></div>
+            <div class="ctrl-toggle">
+              <span>System enabled</span>
+              <label class="toggle-switch"><input type="checkbox" id="toggleEnabled" checked><span class="slider"></span></label>
+            </div>
+            <div class="ctrl-toggle">
+              <span>Simulate sync failure</span>
+              <label class="toggle-switch"><input type="checkbox" id="toggleSyncFail"><span class="slider"></span></label>
+            </div>
+            <button class="ctrl-btn primary" id="btnSensor">▷ Simulate Sensor Dispense</button>
+            <button class="ctrl-btn" id="btnManual">⊕ Manual Dispense</button>
+            <button class="ctrl-btn" id="btnReset">↺ Reset Alert (Refill)</button>
+            <button class="ctrl-btn danger" id="btnFullReset">✕ Reset Dashboard</button>
           </div>
         </div>
 
         <div class="panel">
           <div class="panel-title">Device Health</div>
           <div class="health-rows">
-            <div class="health-row"><div class="health-label">State Machine</div><div id="hStateMachine" class="health-val good">RUNNING</div></div>
-            <div class="health-row"><div class="health-label">Dispense Lock</div><div id="hDispenseLock" class="health-val good">FREE</div></div>
-            <div class="health-row"><div class="health-label">Lockout</div><div id="hLockout" class="health-val">CLEAR</div></div>
-            <div class="health-row"><div class="health-label">Last Dispense</div><div id="hLastDispense" class="health-val">--</div></div>
-            <div class="health-row"><div class="health-label">Uptime</div><div id="hUptime" class="health-val">--</div></div>
+            <div class="health-row"><span class="health-label">State machine</span><span class="health-val good" id="hStateMachine">RUNNING</span></div>
+            <div class="health-row"><span class="health-label">Dispense lock</span><span class="health-val good" id="hDispenseLock">FREE</span></div>
+            <div class="health-row"><span class="health-label">Lockout window</span><span class="health-val" id="hLockout">CLEAR</span></div>
+            <div class="health-row"><span class="health-label">Last dispense</span><span class="health-val" id="hLastDispense">--</span></div>
+            <div class="health-row"><span class="health-label">Uptime</span><span class="health-val good" id="hUptime">0s</span></div>
+            <div class="health-row"><span class="health-label">Sync interval</span><span class="health-val good">5s</span></div>
+            <div class="health-row"><span class="health-label">Mock mode</span><span class="health-val warn">ACTIVE</span></div>
           </div>
         </div>
 
         <div class="panel">
           <div class="panel-title">Session Summary</div>
           <div class="health-rows">
-            <div class="health-row"><div class="health-label">Session Dispenses</div><div id="sSession" class="health-val">0</div></div>
-            <div class="health-row"><div class="health-label">Intensity</div><div id="sIntensity" class="health-val good">LOW</div></div>
-            <div class="health-row"><div class="health-label">Started</div><div id="sStart" class="health-val">--</div></div>
-            <div class="health-row"><div class="health-label">Refills</div><div id="sRefills" class="health-val">0</div></div>
-            <div class="health-row"><div class="health-label">Errors</div><div id="sErrors" class="health-val good">0</div></div>
+            <div class="health-row"><span class="health-label">Session dispenses</span><span class="health-val" id="sSession">0</span></div>
+            <div class="health-row"><span class="health-label">Usage intensity</span><span class="health-val" id="sIntensity">LOW</span></div>
+            <div class="health-row"><span class="health-label">Session start</span><span class="health-val" id="sStart">--</span></div>
+            <div class="health-row"><span class="health-label">Refills this session</span><span class="health-val" id="sRefills">0</span></div>
+            <div class="health-row"><span class="health-label">Errors logged</span><span class="health-val good" id="sErrors">0</span></div>
+            <div class="health-row"><span class="health-label">Data source</span><span class="health-val warn">mock</span></div>
           </div>
         </div>
       </div>
     </div>
   </div>
+</div>
 
-  <script>
+<script>
 // ─────────────────────────────────────────────────────────────
 // DEVICE — single source of truth
 // ─────────────────────────────────────────────────────────────
+const CONFIG = {
+  MAX_PUMPS: 25,
+  HISTORY_BUCKETS: 12,
+  HISTORY_INTERVAL_MS: 30000,
+  CLOCK_INTERVAL_MS: 1000,
+  MOTOR_DELAY_MS: 400,
+  DISPENSE_DELAY_MS: 1000,
+  DISPENSE_TIME_MS: 2400,
+  SYNC_POLL_MS: 5000,
+  TOAST_FADE_MS: 300,
+  TOAST_DURATION_MS: 3000,
+  REFILL_THRESHOLD: 5,
+};
+
+let activeDispenseTimers = [];
+
+function clearActiveTimers() {
+  activeDispenseTimers.forEach(clearTimeout);
+  activeDispenseTimers = [];
+}
+
 const device = {
   usageCount:         0,
   sessionCount:       0,
-  remainingPumps:     25,
-  maxPumps:           25,
+  remainingPumps:     CONFIG.MAX_PUMPS,
+  maxPumps:           CONFIG.MAX_PUMPS,
   refillAlert:        false,
   systemEnabled:      true,
   dispenseInProgress: false,
@@ -289,7 +356,7 @@ const device = {
   online:             true,
   syncFail:           false,
   // fix #3: buckets store { count, ts } — labels anchored to real timestamps
-  usageHistory:       Array.from({ length: 12 }, () => ({ count: 0, ts: Date.now() })),
+  usageHistory:       Array.from({ length: CONFIG.HISTORY_BUCKETS }, () => ({ count: 0, ts: Date.now() })),
   events:             [],
   startMs:            Date.now(),
 };
@@ -305,7 +372,7 @@ const sim = { phase: 'idle' };
 function uiState() {
   if (!device.systemEnabled)     return 'DISABLED';
   if (device.dispenseInProgress) return 'DISPENSING';
-  if (device.refillAlert)        return 'REFILL_REQUIRED';
+  if (device.remainingPumps <= CONFIG.REFILL_THRESHOLD) return 'REFILL_REQUIRED';
   return 'IDLE';
 }
 
@@ -398,7 +465,7 @@ function toast(msg, type = 'info') {
   el.className = 'toast';
   el.innerHTML = `<div class="toast-dot" style="background:${colors[type]}"></div><span>${msg}</span>`;
   document.getElementById('toastZone').appendChild(el);
-  setTimeout(() => { el.style.animation = 'fadeOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 3000);
+  setTimeout(() => { el.style.animation = `fadeOut ${CONFIG.TOAST_FADE_MS / 1000}s ease forwards`; setTimeout(() => el.remove(), CONFIG.TOAST_FADE_MS); }, CONFIG.TOAST_DURATION_MS);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -408,17 +475,18 @@ function render() {
   const state = uiState();
   const pred  = getPrediction();
   const pct   = pred.pct;
+  const isLow = pct <= CONFIG.REFILL_THRESHOLD;
 
   document.getElementById('statUsage').textContent = device.usageCount;
   const remEl = document.getElementById('statRemaining');
   remEl.textContent = device.remainingPumps;
-  remEl.className = 'stat-value ' + (pct <= 16 ? 'bad' : pct <= 40 ? 'warn' : 'good');
+  remEl.className = 'stat-value ' + (isLow ? 'bad' : pct <= 40 ? 'warn' : 'good');
   document.getElementById('statRemainingPct').textContent = `${pct}% full`;
 
   const statusEl = document.getElementById('statStatus');
-  statusEl.textContent = device.refillAlert ? 'LOW' : 'NORMAL';
-  statusEl.className = 'stat-value ' + (device.refillAlert ? 'bad' : 'good');
-  document.getElementById('statStatusSub').textContent = device.refillAlert ? 'refill required' : 'threshold OK';
+  statusEl.textContent = isLow ? 'LOW' : 'NORMAL';
+  statusEl.className = 'stat-value ' + (isLow ? 'bad' : 'good');
+  document.getElementById('statStatusSub').textContent = isLow ? 'refill required' : 'threshold OK';
 
   const stEl = document.getElementById('statState');
   stEl.textContent = state;
@@ -432,6 +500,12 @@ function render() {
 
   document.getElementById('topbarSub').textContent =
     `state: ${state.toLowerCase()} · ${device.remainingPumps}/${device.maxPumps} pumps · ${device.online ? 'online' : 'offline'}`;
+
+  document.getElementById('refillThreshold').textContent = `${CONFIG.REFILL_THRESHOLD} pumps`;
+  document.getElementById('lastDispenseAt').textContent = device.lastDispenseAt || '--';
+  document.getElementById('handDetection').textContent = device.dispenseInProgress ? 'Hand detected' : 'No hand detected';
+  document.getElementById('dataSource').textContent = device.syncFail ? 'Offline simulation' : 'Mock data following ESP32 contract';
+  document.getElementById('lastSyncAt').textContent = new Date().toLocaleTimeString();
 
   document.getElementById('predTime').textContent    = pred.timeStr;
   document.getElementById('predUnit').textContent    = pred.unit;
@@ -495,8 +569,8 @@ function doDispense(source) {
   sim.phase = 'triggered';
   recordEvent('info', `${source === 'manual' ? 'Manual' : 'Sensor'} dispense triggered`);
   render();
-  setTimeout(() => { sim.phase = 'motor_on'; }, 400);
-  setTimeout(() => {
+  activeDispenseTimers.push(setTimeout(() => { sim.phase = 'motor_on'; }, CONFIG.MOTOR_DELAY_MS));
+  activeDispenseTimers.push(setTimeout(() => {
     sim.phase = 'settling';
     device.usageCount++;
     device.sessionCount++;
@@ -504,19 +578,20 @@ function doDispense(source) {
     device.lastDispenseAt = new Date().toLocaleTimeString();
     device.usageHistory[device.usageHistory.length - 1].count++;
     render();
-  }, 1000);
-  setTimeout(() => {
+  }, CONFIG.DISPENSE_DELAY_MS));
+  activeDispenseTimers.push(setTimeout(() => {
     sim.phase = 'done';
     device.dispenseInProgress = false;
-    device.refillAlert = device.remainingPumps <= 0;
+    device.refillAlert = device.remainingPumps <= CONFIG.REFILL_THRESHOLD;
     if (device.refillAlert) {
-      recordEvent('warn', 'Refill alert — bottle empty');
-      toast('Refill required — bottle empty', 'warn');
+      recordEvent('warn', 'Refill alert — threshold reached');
+      toast('Refill recommended', 'warn');
     } else {
       recordEvent('ok', 'Dispense complete');
     }
     render();
-  }, 2400);
+    clearActiveTimers();
+  }, CONFIG.DISPENSE_TIME_MS));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -526,7 +601,10 @@ document.getElementById('btnSensor').addEventListener('click', () => doDispense(
 document.getElementById('btnManual').addEventListener('click', () => doDispense('manual'));
 
 document.getElementById('btnReset').addEventListener('click', () => {
+  device.dispenseInProgress = false;
+  sim.phase = 'idle';
   device.remainingPumps = device.maxPumps;
+  clearActiveTimers();
   device.refillAlert = false; device.sessionCount = 0; device.refillCount++;
   recordEvent('ok', 'Refill confirmed — alert reset');
   toast('Alert reset — bottle refilled', 'ok');
@@ -538,10 +616,11 @@ document.getElementById('btnFullReset').addEventListener('click', () => {
     usageCount: 0, sessionCount: 0, remainingPumps: device.maxPumps,
     refillAlert: false, systemEnabled: true, online: true, syncFail: false,
     dispenseInProgress: false, lastDispenseAt: null, refillCount: 0, errorCount: 0,
-    events: [], usageHistory: Array.from({ length: 12 }, () => ({ count: 0, ts: Date.now() })),
+    events: [], usageHistory: Array.from({ length: CONFIG.HISTORY_BUCKETS }, () => ({ count: 0, ts: Date.now() })),
     startMs: Date.now(), sessionStart: new Date().toLocaleTimeString(),
   });
   sim.phase = 'idle';
+  clearActiveTimers();
   recordEvent('info', 'Dashboard reset');
   render();
 });
@@ -563,12 +642,15 @@ document.getElementById('toggleSyncFail').addEventListener('change', e => {
 // INTERVALS
 // ─────────────────────────────────────────────────────────────
 setInterval(() => { document.getElementById('clockPill').textContent = new Date().toLocaleTimeString(); }, 1000);
+setInterval(() => { document.getElementById('clockPill').textContent = new Date().toLocaleTimeString(); }, CONFIG.CLOCK_INTERVAL_MS);
 // fix #3: new bucket gets a real timestamp on creation
-setInterval(() => { device.usageHistory.shift(); device.usageHistory.push({ count: 0, ts: Date.now() }); render(); }, 30000);
-setInterval(() => { device.online = !device.syncFail; render(); }, 5000);
+setInterval(() => { device.usageHistory.shift(); device.usageHistory.push({ count: 0, ts: Date.now() }); render(); }, CONFIG.HISTORY_INTERVAL_MS);
+setInterval(() => { device.online = !device.syncFail; render(); }, CONFIG.SYNC_POLL_MS);
+
+window.addEventListener('resize', render);
 
 // fix #2: defer first render until after layout paint so canvas has real width
 requestAnimationFrame(render);
-  </script>
+</script>
 </body>
 </html>
