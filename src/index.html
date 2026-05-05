@@ -312,15 +312,24 @@ function uiState() {
 // ─────────────────────────────────────────────────────────────
 // PREDICTION
 // ─────────────────────────────────────────────────────────────
+const CONFIG = {
+  PREDICTION_BUCKETS: 3
+};
+
 function getPrediction() {
-  const sessionMins = (Date.now() - device.startMs) / 60000;
-  const rate = sessionMins > 0.5 ? (device.sessionCount / sessionMins) : null;
   const pct  = Math.round((device.remainingPumps / device.maxPumps) * 100);
+  const recentBuckets = device.usageHistory.slice(-CONFIG.PREDICTION_BUCKETS);
+  const recentDispenses = recentBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
+  const minutesTracked = (recentBuckets.length * 30000) / 60000;
+  const ratePerHour = minutesTracked > 0 ? (recentDispenses / minutesTracked) * 60 : null;
   let timeStr = '--', unit = 'not enough data yet';
-  if (rate && rate > 0) {
-    const minsLeft = device.remainingPumps / rate;
+  if (ratePerHour && ratePerHour > 0) {
+    const minsLeft = (device.remainingPumps / ratePerHour) * 60;
     if (minsLeft < 60) { timeStr = Math.round(minsLeft); unit = 'min remaining'; }
     else               { timeStr = (minsLeft / 60).toFixed(1); unit = 'hrs remaining'; }
+  }
+  if (!ratePerHour || ratePerHour <= 0) {
+    unit = 'not enough recent data yet';
   }
   const risk = pct <= 0 ? 'CRITICAL' : pct <= 16 ? 'HIGH' : pct <= 40 ? 'MEDIUM' : 'LOW';
   const hint = !device.systemEnabled ? 'Enable system to allow dispensing'
@@ -328,7 +337,7 @@ function getPrediction() {
              : risk === 'CRITICAL'   ? 'Refill required — press reset after refilling'
              : risk === 'HIGH'       ? 'Prepare refill soon'
              : 'No action needed';
-  return { timeStr, unit, rate: rate ? rate.toFixed(1) : '--', risk, hint, pct };
+  return { timeStr, unit, rate: ratePerHour ? ratePerHour.toFixed(1) : '--', risk, hint, pct };
 }
 
 // ─────────────────────────────────────────────────────────────
