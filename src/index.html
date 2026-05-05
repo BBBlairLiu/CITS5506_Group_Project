@@ -126,61 +126,70 @@
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div class="title">
-        <h1>SmartSan Dashboard</h1>
-        <p>
-          Mock monitoring interface for the current prototype design.<br>
-          This version follows the planned ESP32/Blynk data contract while the hardware is in transit.
-        </p>
+<div id="toastZone"></div>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-dot">💧</div>
+      <div>
+        <div class="logo-text">SmartSan</div>
+        <div class="logo-sub">v0.6 · mock mode</div>
       </div>
-      <div class="status-pill" id="lastUpdatedPill">Last updated: --</div>
+    </div>
+    <div class="nav-section">
+      <label>Views</label>
+      <div class="nav-item active">⬡ Overview</div>
+      <div class="nav-item">⌁ Analytics</div>
+      <div class="nav-item">⚙ Settings</div>
+    </div>
+    <div style="flex:1"></div>
+    <div style="padding:8px; background:var(--surface2); border-radius:10px; border:1px solid var(--border);">
+      <div style="font-size:11px; color:var(--muted); font-family:'DM Mono',monospace; margin-bottom:4px;">ESP32 data contract</div>
+      <div style="font-size:11px; color:var(--muted);">V0 usageCount · V2 remaining%<br>V3 refillAlert · V4 state<br>V7 remainingPumps · V10–V12 ctrl</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">SmartSan — Main Unit</div>
+        <div class="topbar-sub" id="topbarSub">--</div>
+      </div>
+      <div class="topbar-right">
+        <div class="pill"><div class="pill-dot"></div><span>live · updating</span></div>
+        <div class="pill" id="clockPill">--:--:--</div>
+      </div>
     </div>
 
-    <section class="grid">
-      <div class="card">
-        <h2>Usage Count</h2>
-        <p class="metric" id="usageCount">0</p>
-        <div class="subtext">Total valid dispense events</div>
+    <div class="content">
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-label">Usage Count</div>
+          <div class="stat-value" id="statUsage">0</div>
+          <div class="stat-sub">lifetime dispenses</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Remaining</div>
+          <div class="stat-value good" id="statRemaining">25</div>
+          <div class="stat-sub" id="statRemainingPct">100% full</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Status</div>
+          <div class="stat-value good" id="statStatus">NORMAL</div>
+          <div class="stat-sub" id="statStatusSub">threshold OK</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Device State</div>
+          <div class="stat-value" id="statState" style="font-size:20px">IDLE</div>
+          <div class="stat-sub" id="statStateSub">ready</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Connectivity</div>
+          <div class="stat-value good" id="statOnline">ONLINE</div>
+          <div class="stat-sub" id="statOnlineSub">Blynk connected</div>
+        </div>
       </div>
-
-      <div class="card">
-        <h2>Remaining Pumps</h2>
-        <p class="metric" id="remainingPumps">25</p>
-        <div class="subtext">Pump-count based level estimate</div>
-      </div>
-
-      <div class="card">
-        <h2>Remaining Level</h2>
-        <p class="metric" id="remainingPercent">0%</p>
-        <div class="subtext">Estimated from remaining pumps</div>
-      </div>
-
-      <div class="card">
-        <h2>Sanitizer Status</h2>
-        <p class="metric good" id="sanitizerStatus">NORMAL</p>
-        <div class="subtext">Threshold-based refill monitoring</div>
-      </div>
-
-      <div class="card">
-        <h2>Device State</h2>
-        <p class="metric" style="font-size: 24px;" id="deviceState">IDLE</p>
-        <div class="subtext" id="deviceMessage">System ready</div>
-      </div>
-
-      <div class="card">
-        <h2>Device Online</h2>
-        <p class="metric good" id="deviceOnline">ONLINE</p>
-        <div class="subtext">Blynk/Wi-Fi status placeholder</div>
-      </div>
-
-      <div class="card">
-        <h2>Sync Status</h2>
-        <p class="metric" style="font-size: 24px;" id="syncStatus">HEALTHY</p>
-        <div class="subtext" id="syncMessage">Live update loop is stable</div>
-      </div>
-    </section>
 
     <section class="panel-grid">
       <div class="card">
