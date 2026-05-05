@@ -304,282 +304,304 @@
   </div>
 
   <script>
-    const state = {
-      usageCount: 0,
-      remainingPumps: 25,
-      maxPumps: 25,
-      refillThresholdPumps: 0,
-      sanitizerLow: false,
-      deviceState: 'IDLE',
-      deviceMessage: 'System ready',
-      deviceOnline: true,
-      syncHealthy: true,
-      syncFailureSimulated: false,
-      systemEnabled: true,
-      handDetected: false,
-      lastDispenseAt: null,
-      dispenseInProgress: false,
-      lastSyncAt: null,
-      sessionDispenses: 0,
-      sessionStartAt: null,
-      eventTimeline: [],
-      dataSource: 'Mock data following ESP32 contract'
-    };
+// ─────────────────────────────────────────────────────────────
+// DEVICE — single source of truth
+// ─────────────────────────────────────────────────────────────
+const device = {
+  usageCount:         0,
+  sessionCount:       0,
+  remainingPumps:     25,
+  maxPumps:           25,
+  refillAlert:        false,
+  systemEnabled:      true,
+  dispenseInProgress: false,
+  lastDispenseAt:     null,
+  sessionStart:       new Date().toLocaleTimeString(),
+  refillCount:        0,
+  errorCount:         0,
+  online:             true,
+  syncFail:           false,
+  // fix #3: buckets store { count, ts } — labels anchored to real timestamps
+  usageHistory:       Array.from({ length: 12 }, () => ({ count: 0, ts: Date.now() })),
+  events:             [],
+  startMs:            Date.now(),
+};
 
-    function updateTimestamp() {
-      const now = new Date();
-      const formatted = now.toLocaleString();
-      document.getElementById('lastUpdatedPill').textContent = `Last updated: ${formatted}`;
-    }
+// ─────────────────────────────────────────────────────────────
+// SIM — animation timeline only, no logic authority
+// ─────────────────────────────────────────────────────────────
+const sim = { phase: 'idle' };
 
-    function render() {
-      const remainingPercent = calculateRemainingPercent();
-      document.getElementById('usageCount').textContent = state.usageCount;
-      document.getElementById('remainingPumps').textContent = `${state.remainingPumps}`;
-      document.getElementById('remainingPercent').textContent = `${remainingPercent}%`;
-      document.getElementById('refillThreshold').textContent = `${state.refillThresholdPumps} pumps`;
-      document.getElementById('deviceState').textContent = state.deviceState;
-      document.getElementById('deviceMessage').textContent = state.deviceMessage;
-      document.getElementById('handDetection').textContent = state.handDetected ? 'Valid hand detected' : 'No hand detected';
-      document.getElementById('lastDispenseAt').textContent = state.lastDispenseAt || '--';
-      document.getElementById('lastSyncAt').textContent = state.lastSyncAt || '--';
-      document.getElementById('dataSource').textContent = state.dataSource;
-      document.getElementById('sessionDispenses').textContent = state.sessionDispenses;
-      document.getElementById('usageIntensity').textContent = getUsageIntensity();
-      document.getElementById('sessionStartAt').textContent = state.sessionStartAt || '--';
-      document.getElementById('systemEnabledToggle').checked = state.systemEnabled;
-      document.getElementById('syncFailureToggle').checked = state.syncFailureSimulated;
-      document.getElementById('simulateDispenseBtn').disabled = !state.systemEnabled || state.dispenseInProgress;
-      document.getElementById('manualDispenseBtn').disabled = !state.systemEnabled || state.dispenseInProgress;
+// ─────────────────────────────────────────────────────────────
+// UI STATE — pure derivation, no mapping layer
+// ─────────────────────────────────────────────────────────────
+function uiState() {
+  if (!device.systemEnabled)     return 'DISABLED';
+  if (device.dispenseInProgress) return 'DISPENSING';
+  if (device.refillAlert)        return 'REFILL_REQUIRED';
+  return 'IDLE';
+}
 
-      const sanitizerStatusEl = document.getElementById('sanitizerStatus');
-      sanitizerStatusEl.textContent = state.sanitizerLow ? 'LOW' : 'NORMAL';
-      sanitizerStatusEl.classList.remove('good', 'warn', 'bad');
-      sanitizerStatusEl.classList.add(state.sanitizerLow ? 'bad' : 'good');
+// ─────────────────────────────────────────────────────────────
+// PREDICTION
+// ─────────────────────────────────────────────────────────────
+function getPrediction() {
+  const sessionMins = (Date.now() - device.startMs) / 60000;
+  const rate = sessionMins > 0.5 ? (device.sessionCount / sessionMins) : null;
+  const pct  = Math.round((device.remainingPumps / device.maxPumps) * 100);
+  let timeStr = '--', unit = 'not enough data yet';
+  if (rate && rate > 0) {
+    const minsLeft = device.remainingPumps / rate;
+    if (minsLeft < 60) { timeStr = Math.round(minsLeft); unit = 'min remaining'; }
+    else               { timeStr = (minsLeft / 60).toFixed(1); unit = 'hrs remaining'; }
+  }
+  const risk = pct <= 0 ? 'CRITICAL' : pct <= 16 ? 'HIGH' : pct <= 40 ? 'MEDIUM' : 'LOW';
+  const hint = !device.systemEnabled ? 'Enable system to allow dispensing'
+             : !device.online        ? 'Check Wi-Fi/Blynk connectivity'
+             : risk === 'CRITICAL'   ? 'Refill required — press reset after refilling'
+             : risk === 'HIGH'       ? 'Prepare refill soon'
+             : 'No action needed';
+  return { timeStr, unit, rate: rate ? rate.toFixed(1) : '--', risk, hint, pct };
+}
 
-      const onlineEl = document.getElementById('deviceOnline');
-      onlineEl.textContent = state.deviceOnline ? 'ONLINE' : 'OFFLINE';
-      onlineEl.classList.remove('good', 'warn', 'bad');
-      onlineEl.classList.add(state.deviceOnline ? 'good' : 'bad');
+// ─────────────────────────────────────────────────────────────
+// GRAPH — fix #2: use parentElement.clientWidth, not offsetWidth
+// ─────────────────────────────────────────────────────────────
+const chartCanvas = document.getElementById('usageChart');
+const ctx = chartCanvas.getContext('2d');
 
-      const syncEl = document.getElementById('syncStatus');
-      const syncMessageEl = document.getElementById('syncMessage');
-      syncEl.textContent = state.syncHealthy ? 'HEALTHY' : 'DEGRADED';
-      syncMessageEl.textContent = state.syncHealthy
-        ? 'Live update loop is stable'
-        : 'Sync delay detected, waiting for next successful update';
-      syncEl.classList.remove('good', 'warn', 'bad');
-      syncEl.classList.add(state.syncHealthy ? 'good' : 'warn');
+function drawChart(history) {
+  const W = Math.max(300, chartCanvas.parentElement.clientWidth);
+  const H = 120;
+  chartCanvas.width = W; chartCanvas.height = H;
+  const counts = history.map(b => b.count);
+  const max = Math.max(...counts, 1);
+  const pad = { l: 8, r: 8, t: 8, b: 8 };
+  const bw  = (W - pad.l - pad.r) / history.length;
+  ctx.clearRect(0, 0, W, H);
 
-      const refillRisk = calculateRefillRisk();
-      const operatorHint = calculateOperatorHint(refillRisk);
-      document.getElementById('refillRisk').textContent = refillRisk;
-      document.getElementById('operatorHint').textContent = operatorHint;
+  const grad = ctx.createLinearGradient(0, pad.t, 0, H - pad.b);
+  grad.addColorStop(0, 'rgba(56,189,248,0.3)');
+  grad.addColorStop(1, 'rgba(56,189,248,0.0)');
 
-      const timelineEl = document.getElementById('eventTimeline');
-      if (state.eventTimeline.length === 0) {
-        timelineEl.textContent = 'No events yet.';
-      } else {
-        timelineEl.innerHTML = state.eventTimeline
-          .slice(0, 8)
-          .map((entry) => `${entry.time} - ${entry.message}`)
-          .join('<br>');
-      }
+  const pts = counts.map((v, i) => ({
+    x: pad.l + i * bw + bw / 2,
+    y: H - pad.b - ((v / max) * (H - pad.t - pad.b))
+  }));
 
-      updateTimestamp();
-    }
+  ctx.beginPath();
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.lineTo(pts[pts.length - 1].x, H - pad.b);
+  ctx.lineTo(pts[0].x, H - pad.b);
+  ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
 
-    function calculateRemainingPercent() {
-      return Math.max(0, Math.min(100, Math.round((state.remainingPumps / state.maxPumps) * 100)));
-    }
+  ctx.beginPath(); ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
 
-    function calculateRefillRisk() {
-      if (state.sanitizerLow || state.remainingPumps <= state.refillThresholdPumps) {
-        return 'CRITICAL';
-      }
+  pts.forEach((p, i) => {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = counts[i] === max ? '#fbbf24' : '#38bdf8'; ctx.fill();
+  });
+}
 
-      const remainingPercent = calculateRemainingPercent();
-      if (remainingPercent <= 20) {
-        return 'HIGH';
-      }
-      if (remainingPercent <= 40) {
-        return 'MEDIUM';
-      }
+// ─────────────────────────────────────────────────────────────
+// FEED
+// ─────────────────────────────────────────────────────────────
+function recordEvent(type, msg) {
+  device.events.unshift({ type, msg, time: new Date().toLocaleTimeString() });
+  if (device.events.length > 30) device.events.pop();
+}
+function renderFeed() {
+  const el = document.getElementById('feedList');
+  if (!device.events.length) { el.innerHTML = '<div class="no-events">No events yet.</div>'; return; }
+  el.innerHTML = device.events.slice(0, 12).map(e => `
+    <div class="feed-item">
+      <span class="feed-tag ${e.type}">${e.type.toUpperCase()}</span>
+      <div><div class="feed-msg">${e.msg}</div><div class="feed-time">${e.time}</div></div>
+    </div>`).join('');
+}
 
-      return 'LOW';
-    }
+// ─────────────────────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const colors = { info: '#38bdf8', ok: '#4ade80', warn: '#fbbf24', error: '#f87171' };
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<div class="toast-dot" style="background:${colors[type]}"></div><span>${msg}</span>`;
+  document.getElementById('toastZone').appendChild(el);
+  setTimeout(() => { el.style.animation = 'fadeOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 3000);
+}
 
-    function calculateOperatorHint(refillRisk) {
-      if (!state.systemEnabled) {
-        return 'Enable system to allow dispensing';
-      }
-      if (!state.syncHealthy) {
-        return 'Check Wi-Fi/Blynk connectivity';
-      }
-      if (refillRisk === 'CRITICAL') {
-        return 'Refill required now and reset alert';
-      }
-      if (refillRisk === 'HIGH') {
-        return 'Prepare refill soon';
-      }
-      if (state.deviceState === 'ERROR') {
-        return 'Inspect device and run recovery';
-      }
+// ─────────────────────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────────────────────
+function render() {
+  const state = uiState();
+  const pred  = getPrediction();
+  const pct   = pred.pct;
 
-      return 'No action needed';
-    }
+  document.getElementById('statUsage').textContent = device.usageCount;
+  const remEl = document.getElementById('statRemaining');
+  remEl.textContent = device.remainingPumps;
+  remEl.className = 'stat-value ' + (pct <= 16 ? 'bad' : pct <= 40 ? 'warn' : 'good');
+  document.getElementById('statRemainingPct').textContent = `${pct}% full`;
 
-    function getUsageIntensity() {
-      if (state.sessionDispenses >= 10) {
-        return 'HIGH';
-      }
-      if (state.sessionDispenses >= 4) {
-        return 'MEDIUM';
-      }
+  const statusEl = document.getElementById('statStatus');
+  statusEl.textContent = device.refillAlert ? 'LOW' : 'NORMAL';
+  statusEl.className = 'stat-value ' + (device.refillAlert ? 'bad' : 'good');
+  document.getElementById('statStatusSub').textContent = device.refillAlert ? 'refill required' : 'threshold OK';
 
-      return 'LOW';
-    }
+  const stEl = document.getElementById('statState');
+  stEl.textContent = state;
+  stEl.className = 'stat-value' + (state === 'DISPENSING' ? ' warn' : state === 'REFILL_REQUIRED' ? ' bad' : '');
+  document.getElementById('statStateSub').textContent = device.systemEnabled ? 'enabled' : 'disabled';
 
-    function recordEvent(message) {
-      state.eventTimeline.unshift({
-        time: new Date().toLocaleTimeString(),
-        message
-      });
-    }
+  const onEl = document.getElementById('statOnline');
+  onEl.textContent = device.online ? 'ONLINE' : 'OFFLINE';
+  onEl.className = 'stat-value ' + (device.online ? 'good' : 'bad');
+  document.getElementById('statOnlineSub').textContent = device.online ? 'Blynk connected' : 'connection lost';
 
-    function updateSyncStatus(success) {
-      state.syncHealthy = success;
-      state.deviceOnline = success;
-      state.lastSyncAt = success ? new Date().toLocaleTimeString() : state.lastSyncAt;
-    }
+  document.getElementById('topbarSub').textContent =
+    `state: ${state.toLowerCase()} · ${device.remainingPumps}/${device.maxPumps} pumps · ${device.online ? 'online' : 'offline'}`;
 
-    function setDisabledState() {
-      state.deviceState = 'DISABLED';
-      state.deviceMessage = 'System disabled from dashboard control';
-      state.handDetected = false;
-      recordEvent('System disabled by operator');
-      render();
-    }
+  document.getElementById('predTime').textContent    = pred.timeStr;
+  document.getElementById('predUnit').textContent    = pred.unit;
+  document.getElementById('predRate').textContent =
+    pred.rate !== '--' ? `${pred.rate} disp/hr` : '--';
+  document.getElementById('predSession').textContent = device.sessionCount;
+  const riskEl = document.getElementById('predRisk');
+  riskEl.textContent = pred.risk;
+  riskEl.style.color = pred.risk === 'CRITICAL' ? 'var(--red)' : pred.risk === 'HIGH' ? 'var(--yellow)' : 'var(--green)';
+  document.getElementById('predHint').textContent = pred.hint;
 
-    function simulateDispense(source = 'sensor') {
-      if (!state.systemEnabled || state.dispenseInProgress) {
-        return;
-      }
+  const barFill = document.getElementById('levelBarFill');
+  barFill.style.width = pct + '%';
+  barFill.style.background = pct <= 16 ? 'var(--red)' : pct <= 40 ? 'var(--yellow)' : 'var(--green)';
+  document.getElementById('levelBarLabel').textContent = `${pct}% · ${device.remainingPumps} pumps`;
 
-      if (!state.sessionStartAt) {
-        state.sessionStartAt = new Date().toLocaleTimeString();
-      }
+  drawChart(device.usageHistory);
+  // fix #3: labels from stored bucket timestamps, not computed from now
+  document.getElementById('graphLabels').innerHTML = device.usageHistory.map((b, i) =>
+    `<span>${i % 3 === 0 ? new Date(b.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>`
+  ).join('');
+  const counts = device.usageHistory.map(b => b.count);
+  document.getElementById('graphPeak').textContent  = Math.max(...counts);
+  document.getElementById('graphAvg').textContent   = (counts.reduce((a, b) => a + b, 0) / counts.length).toFixed(1);
+  document.getElementById('graphTotal').textContent = counts.reduce((a, b) => a + b, 0);
 
-      state.dispenseInProgress = true;
-      state.handDetected = true;
-      state.deviceState = 'HAND_DETECTED';
-      state.deviceMessage = source === 'manual' ? 'Manual dispense requested from dashboard' : 'Valid detection confirmed';
-      recordEvent(source === 'manual' ? 'Manual dispense requested' : 'Sensor dispense requested');
-      render();
+  renderFeed();
 
-      setTimeout(() => {
-        state.deviceState = 'DISPENSING';
-        state.deviceMessage = 'Servo press triggered';
-        recordEvent('Dispensing cycle started');
-        render();
-      }, 500);
+  document.getElementById('hStateMachine').textContent = device.systemEnabled ? 'RUNNING' : 'HALTED';
+  document.getElementById('hStateMachine').className   = 'health-val ' + (device.systemEnabled ? 'good' : 'warn');
+  document.getElementById('hDispenseLock').textContent = device.dispenseInProgress ? 'LOCKED' : 'FREE';
+  document.getElementById('hDispenseLock').className   = 'health-val ' + (device.dispenseInProgress ? 'warn' : 'good');
+  document.getElementById('hLockout').textContent      = device.dispenseInProgress ? 'ACTIVE' : 'CLEAR';
+  document.getElementById('hLastDispense').textContent = device.lastDispenseAt || '--';
+  const upSec = Math.floor((Date.now() - device.startMs) / 1000);
+  document.getElementById('hUptime').textContent = upSec > 60 ? `${Math.floor(upSec / 60)}m ${upSec % 60}s` : `${upSec}s`;
 
-      setTimeout(() => {
-        state.usageCount += 1;
-        state.sessionDispenses += 1;
-        state.remainingPumps = Math.max(0, state.remainingPumps - 1);
-        state.lastDispenseAt = new Date().toLocaleTimeString();
-        state.deviceState = 'WAIT STABILISE';
-        state.deviceMessage = 'Applying lockout and pump-count update';
-        render();
-      }, 1200);
+  document.getElementById('sSession').textContent = device.sessionCount;
+  const intensity = device.sessionCount >= 10 ? 'HIGH' : device.sessionCount >= 4 ? 'MEDIUM' : 'LOW';
+  const intEl = document.getElementById('sIntensity');
+  intEl.textContent = intensity;
+  intEl.className = 'health-val ' + (intensity === 'HIGH' ? 'bad' : intensity === 'MEDIUM' ? 'warn' : 'good');
+  document.getElementById('sStart').textContent   = device.sessionStart;
+  document.getElementById('sRefills').textContent = device.refillCount;
+  const errEl = document.getElementById('sErrors');
+  errEl.textContent = device.errorCount;
+  errEl.className = 'health-val ' + (device.errorCount > 0 ? 'warn' : 'good');
 
-      setTimeout(() => {
-        state.sanitizerLow = state.remainingPumps <= state.refillThresholdPumps;
-        state.deviceState = state.sanitizerLow ? 'REFILL_REQUIRED' : 'UPDATE_STATUS';
-        state.deviceMessage = state.sanitizerLow ? 'Low sanitizer warning generated' : 'System stable and normal';
-        if (state.sanitizerLow) {
-          recordEvent('Refill alert triggered');
-        }
-        render();
-      }, 2600);
+  document.getElementById('toggleEnabled').checked  = device.systemEnabled;
+  document.getElementById('toggleSyncFail').checked = device.syncFail;
+  document.getElementById('btnSensor').disabled = !device.systemEnabled || device.dispenseInProgress;
+  document.getElementById('btnManual').disabled = !device.systemEnabled || device.dispenseInProgress;
+}
 
-      setTimeout(() => {
-        state.handDetected = false;
-        state.dispenseInProgress = false;
-        state.deviceState = state.sanitizerLow ? 'REFILL_REQUIRED' : 'IDLE';
-        state.deviceMessage = state.sanitizerLow ? 'Refill required before normal operation' : 'System ready';
-        recordEvent('Dispense cycle completed');
-        render();
-      }, 3600);
-    }
-
-    function resetAlert() {
-      state.remainingPumps = state.maxPumps;
-      state.sanitizerLow = false;
-      state.deviceState = state.systemEnabled ? 'IDLE' : 'DISABLED';
-      state.deviceMessage = 'Alert reset after refill/testing';
-      state.sessionDispenses = 0;
-      state.sessionStartAt = new Date().toLocaleTimeString();
-      recordEvent('Refill alert reset');
-      render();
-    }
-
-    function resetDashboard() {
-      state.usageCount = 0;
-      state.remainingPumps = state.maxPumps;
-      state.sanitizerLow = false;
-      state.systemEnabled = true;
-      state.syncHealthy = true;
-      state.syncFailureSimulated = false;
-      state.deviceOnline = true;
-      state.deviceState = 'IDLE';
-      state.deviceMessage = 'System ready';
-      state.handDetected = false;
-      state.lastDispenseAt = null;
-      state.lastSyncAt = null;
-      state.sessionDispenses = 0;
-      state.sessionStartAt = null;
-      state.dispenseInProgress = false;
-      state.eventTimeline = [];
-      render();
-    }
-
-    function syncTick() {
-      const success = !state.syncFailureSimulated;
-      updateSyncStatus(success);
-      if (!success) {
-        recordEvent('Sync failure simulated');
-      }
-      render();
-    }
-
-    document.getElementById('simulateDispenseBtn').addEventListener('click', () => simulateDispense('sensor'));
-    document.getElementById('manualDispenseBtn').addEventListener('click', () => simulateDispense('manual'));
-    document.getElementById('resetAlertBtn').addEventListener('click', resetAlert);
-    document.getElementById('resetBtn').addEventListener('click', resetDashboard);
-    document.getElementById('syncFailureToggle').addEventListener('change', (event) => {
-      state.syncFailureSimulated = event.target.checked;
-      recordEvent(state.syncFailureSimulated ? 'Sync failure mode enabled' : 'Sync failure mode disabled');
-      syncTick();
-    });
-    document.getElementById('systemEnabledToggle').addEventListener('change', (event) => {
-      state.systemEnabled = event.target.checked;
-      if (!state.systemEnabled) {
-        setDisabledState();
-        return;
-      }
-
-      state.deviceState = state.sanitizerLow ? 'REFILL_REQUIRED' : 'IDLE';
-      state.deviceMessage = state.sanitizerLow ? 'Refill required before normal operation' : 'System ready';
-      recordEvent('System enabled');
-      render();
-    });
-
-    setInterval(syncTick, 5000);
-    state.sessionDispenses = 0;
-    state.sessionStartAt = new Date().toLocaleTimeString();
+// ─────────────────────────────────────────────────────────────
+// DISPENSE — fix #4: history bucket always in sync with sessionCount
+// ─────────────────────────────────────────────────────────────
+function doDispense(source) {
+  if (!device.systemEnabled || device.dispenseInProgress || device.remainingPumps <= 0) return;
+  device.dispenseInProgress = true;
+  sim.phase = 'triggered';
+  recordEvent('info', `${source === 'manual' ? 'Manual' : 'Sensor'} dispense triggered`);
+  render();
+  setTimeout(() => { sim.phase = 'motor_on'; }, 400);
+  setTimeout(() => {
+    sim.phase = 'settling';
+    device.usageCount++;
+    device.sessionCount++;
+    device.remainingPumps = Math.max(0, device.remainingPumps - 1);
+    device.lastDispenseAt = new Date().toLocaleTimeString();
+    device.usageHistory[device.usageHistory.length - 1].count++;
     render();
+  }, 1000);
+  setTimeout(() => {
+    sim.phase = 'done';
+    device.dispenseInProgress = false;
+    device.refillAlert = device.remainingPumps <= 0;
+    if (device.refillAlert) {
+      recordEvent('warn', 'Refill alert — bottle empty');
+      toast('Refill required — bottle empty', 'warn');
+    } else {
+      recordEvent('ok', 'Dispense complete');
+    }
+    render();
+  }, 2400);
+}
+
+// ─────────────────────────────────────────────────────────────
+// CONTROLS
+// ─────────────────────────────────────────────────────────────
+document.getElementById('btnSensor').addEventListener('click', () => doDispense('sensor'));
+document.getElementById('btnManual').addEventListener('click', () => doDispense('manual'));
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  device.remainingPumps = device.maxPumps;
+  device.refillAlert = false; device.sessionCount = 0; device.refillCount++;
+  recordEvent('ok', 'Refill confirmed — alert reset');
+  toast('Alert reset — bottle refilled', 'ok');
+  render();
+});
+
+document.getElementById('btnFullReset').addEventListener('click', () => {
+  Object.assign(device, {
+    usageCount: 0, sessionCount: 0, remainingPumps: device.maxPumps,
+    refillAlert: false, systemEnabled: true, online: true, syncFail: false,
+    dispenseInProgress: false, lastDispenseAt: null, refillCount: 0, errorCount: 0,
+    events: [], usageHistory: Array.from({ length: 12 }, () => ({ count: 0, ts: Date.now() })),
+    startMs: Date.now(), sessionStart: new Date().toLocaleTimeString(),
+  });
+  sim.phase = 'idle';
+  recordEvent('info', 'Dashboard reset');
+  render();
+});
+
+document.getElementById('toggleEnabled').addEventListener('change', e => {
+  device.systemEnabled = e.target.checked;
+  recordEvent(device.systemEnabled ? 'ok' : 'warn', `System ${device.systemEnabled ? 'enabled' : 'disabled'}`);
+  render();
+});
+
+document.getElementById('toggleSyncFail').addEventListener('change', e => {
+  device.syncFail = e.target.checked; device.online = !device.syncFail;
+  recordEvent(device.syncFail ? 'error' : 'ok', device.syncFail ? 'Sync failure simulated' : 'Sync restored');
+  if (device.syncFail) toast('Sync failure simulated', 'error');
+  render();
+});
+
+// ─────────────────────────────────────────────────────────────
+// INTERVALS
+// ─────────────────────────────────────────────────────────────
+setInterval(() => { document.getElementById('clockPill').textContent = new Date().toLocaleTimeString(); }, 1000);
+// fix #3: new bucket gets a real timestamp on creation
+setInterval(() => { device.usageHistory.shift(); device.usageHistory.push({ count: 0, ts: Date.now() }); render(); }, 30000);
+setInterval(() => { device.online = !device.syncFail; render(); }, 5000);
+
+// fix #2: defer first render until after layout paint so canvas has real width
+requestAnimationFrame(render);
   </script>
 </body>
 </html>
