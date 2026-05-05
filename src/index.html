@@ -4,630 +4,580 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SmartSan Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #f5f7fb;
-      --panel: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --border: #e5e7eb;
-      --good: #15803d;
-      --warn: #d97706;
-      --bad: #b91c1c;
-      --shadow: 0 10px 25px rgba(0, 0, 0, 0.06);
+      --bg: #0d0f12;
+      --surface: #141720;
+      --surface2: #1c2030;
+      --border: #252b3b;
+      --text: #e8eaf0;
+      --muted: #5a6280;
+      --green: #4ade80;
+      --blue: #38bdf8;
+      --yellow: #fbbf24;
+      --red: #f87171;
     }
 
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
 
-    body {
-      margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
+    .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
 
-    .container {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 24px;
-    }
+    .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; gap: 28px; }
+    .logo { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+    .logo-dot { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--green), var(--blue)); display: flex; align-items: center; justify-content: center; }
+    .logo-text { font-size: 16px; font-weight: 600; }
+    .logo-sub { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; }
+    .nav-section label { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); padding: 0 8px; display: block; margin-bottom: 6px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; color: var(--muted); font-size: 13px; }
+    .nav-item:hover, .nav-item.active { background: var(--surface2); color: var(--text); }
+    .nav-item.active { color: var(--green); }
 
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-      margin-bottom: 24px;
-    }
+    .main { display: flex; flex-direction: column; overflow: hidden; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .topbar-title { font-size: 16px; font-weight: 600; }
+    .topbar-sub { font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; margin-top: 2px; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .pill { display: flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-family: 'DM Mono', monospace; }
+    .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-    .title h1 {
-      margin: 0 0 8px 0;
-      font-size: 32px;
-    }
+    .content { padding: 24px 28px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 20px; }
 
-    .title p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.5;
-    }
+    .stat-row { display: grid; grid-template-columns: repeat(5,1fr); gap: 14px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px; font-family: 'DM Mono', monospace; }
+    .stat-value { font-size: 32px; font-weight: 600; line-height: 1; font-family: 'DM Mono', monospace; }
+    .stat-value.good { color: var(--green); }
+    .stat-value.warn { color: var(--yellow); }
+    .stat-value.bad  { color: var(--red); }
+    .stat-sub { margin-top: 8px; font-size: 11px; color: var(--muted); }
 
-    .status-pill {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 10px 14px;
-      box-shadow: var(--shadow);
-      font-size: 14px;
-      white-space: nowrap;
-    }
+    .main-grid   { display: grid; grid-template-columns: 1fr 1fr 320px; gap: 14px; }
+    .bottom-grid { display: grid; grid-template-columns: 1fr 1fr 1fr;   gap: 14px; }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-    }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+    .panel-title { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); font-family: 'DM Mono', monospace; margin-bottom: 16px; }
 
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: var(--shadow);
-    }
+    .prediction-main { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
+    .prediction-time { font-size: 42px; font-weight: 600; font-family: 'DM Mono', monospace; line-height: 1; color: var(--blue); }
+    .prediction-unit { font-size: 16px; color: var(--muted); margin-bottom: 4px; }
+    .prediction-rows { display: flex; flex-direction: column; gap: 10px; }
+    .pred-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface2); border-radius: 8px; font-size: 13px; }
+    .pred-row .pred-label { color: var(--muted); }
+    .pred-row .pred-val   { font-family: 'DM Mono', monospace; font-weight: 500; }
 
-    .card h2 {
-      margin: 0 0 10px 0;
-      font-size: 15px;
-      color: var(--muted);
-      font-weight: 600;
-    }
+    .level-bar-wrap { margin: 16px 0 8px; }
+    .level-bar-track { height: 8px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
+    .level-bar-fill  { height: 100%; border-radius: 999px; transition: width .6s ease, background .4s; }
+    .level-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 6px; font-family: 'DM Mono', monospace; }
 
-    .metric {
-      font-size: 34px;
-      font-weight: 700;
-      margin: 0;
-    }
+    .graph-wrap { position: relative; height: 120px; margin-bottom: 12px; }
+    canvas#usageChart { width: 100% !important; height: 120px !important; }
+    .graph-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace; }
 
-    .subtext {
-      margin-top: 10px;
-      color: var(--muted);
-      font-size: 14px;
-    }
+    /* Feed */
+    .feed-list { display: flex; flex-direction: column; gap: 1px; max-height: 260px; overflow-y: auto; }
+    .feed-list::-webkit-scrollbar { width: 4px; }
+    .feed-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .feed-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: 8px; }
+    .feed-item:hover { background: var(--surface2); }
+    .feed-tag { font-size: 10px; font-family: 'DM Mono', monospace; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; margin-top: 1px; }
+    .feed-tag.info {
+      background: rgba(56,189,248,.15);
+      color: var(--blue);
+    }    
+    .feed-tag.warn  { background: rgba(251,191,36,.15);  color: var(--yellow); }
+    .feed-tag.error { background: rgba(248,113,113,.15); color: var(--red); }
+    .feed-tag.ok    { background: rgba(74,222,128,.15);  color: var(--green); }
+    .feed-msg  { font-size: 13px; }
+    .feed-time { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; margin-top: 2px; }
+    .no-events { color: var(--muted); font-size: 13px; padding: 8px 10px; }
 
-    .good { color: var(--good); }
-    .warn { color: var(--warn); }
-    .bad { color: var(--bad); }
+    .ctrl-stack { display: flex; flex-direction: column; gap: 8px; }
+    .ctrl-btn { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; text-align: left; }
+    .ctrl-btn:hover:not(:disabled)        { border-color: var(--blue); color: var(--blue); }
+    .ctrl-btn.danger:hover:not(:disabled) { border-color: var(--red);  color: var(--red); }
+    .ctrl-btn.primary { background: rgba(74,222,128,.1); border-color: rgba(74,222,128,.3); color: var(--green); }
+    .ctrl-btn.primary:hover:not(:disabled){ background: rgba(74,222,128,.2); }
+    .ctrl-btn:disabled { opacity: .4; cursor: not-allowed; }
+    .ctrl-toggle { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); font-size: 13px; }
+    .toggle-switch { position: relative; width: 36px; height: 20px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: .2s; }
+    .slider::before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: .2s; }
+    input:checked + .slider { background: var(--green); }
+    input:checked + .slider::before { transform: translateX(16px); }
 
-    .panel-grid {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 16px;
-    }
+    .health-rows { display: flex; flex-direction: column; gap: 8px; }
+    .health-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 12px; background: var(--surface2); border-radius: 8px; }
+    .health-label { color: var(--muted); }
+    .health-val      { font-family: 'DM Mono', monospace; font-size: 12px; }
+    .health-val.good { color: var(--green); }
+    .health-val.warn { color: var(--yellow); }
+    .health-val.bad  { color: var(--red); }
 
-    .row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      padding: 12px 0;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .row:last-child {
-      border-bottom: none;
-    }
-
-    .row .label {
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .row .value {
-      font-weight: 600;
-      text-align: right;
-    }
-
-    .controls {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-top: 10px;
-    }
-
-    button {
-      border: none;
-      border-radius: 12px;
-      padding: 12px 14px;
-      background: #111827;
-      color: white;
-      font-size: 14px;
-      cursor: pointer;
-    }
-
-    button.secondary {
-      background: #e5e7eb;
-      color: #111827;
-    }
-
-    button.danger {
-      background: #b91c1c;
-    }
-
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.55;
-    }
-
-    .toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 12px;
-      background: #f9fafb;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-    }
-
-    .toggle-row label {
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .footer-note {
-      margin-top: 20px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    @media (max-width: 900px) {
-      .grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .panel-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    @media (max-width: 600px) {
-      .header {
-        flex-direction: column;
-      }
-
-      .grid {
-        grid-template-columns: 1fr;
-      }
-    }
+    #toastZone { position: fixed; top: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 999; pointer-events: none; }
+    .toast { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.4); animation: slideIn .25s ease; pointer-events: all; min-width: 280px; }
+    .toast-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes fadeOut { to { opacity: 0; transform: translateX(10px); } }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div class="title">
-        <h1>SmartSan Dashboard</h1>
-        <p>
-          Mock monitoring interface for the current prototype design.<br>
-          This version follows the planned ESP32/Blynk data contract while the hardware is in transit.
-        </p>
+<div id="toastZone"></div>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-dot">💧</div>
+      <div>
+        <div class="logo-text">SmartSan</div>
+        <div class="logo-sub">v0.6 · mock mode</div>
       </div>
-      <div class="status-pill" id="lastUpdatedPill">Last updated: --</div>
+    </div>
+    <div class="nav-section">
+      <label>Views</label>
+      <div class="nav-item active">⬡ Overview</div>
+      <div class="nav-item">⌁ Analytics</div>
+      <div class="nav-item">⚙ Settings</div>
+    </div>
+    <div style="flex:1"></div>
+    <div style="padding:8px; background:var(--surface2); border-radius:10px; border:1px solid var(--border);">
+      <div style="font-size:11px; color:var(--muted); font-family:'DM Mono',monospace; margin-bottom:4px;">ESP32 data contract</div>
+      <div style="font-size:11px; color:var(--muted);">V0 usageCount · V2 remaining%<br>V3 refillAlert · V4 state<br>V7 remainingPumps · V10–V12 ctrl</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">SmartSan — Main Unit</div>
+        <div class="topbar-sub" id="topbarSub">--</div>
+      </div>
+      <div class="topbar-right">
+        <div class="pill"><div class="pill-dot"></div><span>live · updating</span></div>
+        <div class="pill" id="clockPill">--:--:--</div>
+      </div>
     </div>
 
-    <section class="grid">
-      <div class="card">
-        <h2>Usage Count</h2>
-        <p class="metric" id="usageCount">0</p>
-        <div class="subtext">Total valid dispense events</div>
-      </div>
-
-      <div class="card">
-        <h2>Remaining Pumps</h2>
-        <p class="metric" id="remainingPumps">25</p>
-        <div class="subtext">Pump-count based level estimate</div>
-      </div>
-
-      <div class="card">
-        <h2>Remaining Level</h2>
-        <p class="metric" id="remainingPercent">0%</p>
-        <div class="subtext">Estimated from remaining pumps</div>
-      </div>
-
-      <div class="card">
-        <h2>Sanitizer Status</h2>
-        <p class="metric good" id="sanitizerStatus">NORMAL</p>
-        <div class="subtext">Threshold-based refill monitoring</div>
-      </div>
-
-      <div class="card">
-        <h2>Device State</h2>
-        <p class="metric" style="font-size: 24px;" id="deviceState">IDLE</p>
-        <div class="subtext" id="deviceMessage">System ready</div>
-      </div>
-
-      <div class="card">
-        <h2>Device Online</h2>
-        <p class="metric good" id="deviceOnline">ONLINE</p>
-        <div class="subtext">Blynk/Wi-Fi status placeholder</div>
-      </div>
-
-      <div class="card">
-        <h2>Sync Status</h2>
-        <p class="metric" style="font-size: 24px;" id="syncStatus">HEALTHY</p>
-        <div class="subtext" id="syncMessage">Live update loop is stable</div>
-      </div>
-    </section>
-
-    <section class="panel-grid">
-      <div class="card">
-        <h2>Current System Details</h2>
-        <div class="row">
-          <div class="label">Refill Threshold</div>
-          <div class="value" id="refillThreshold">0 pumps</div>
+    <div class="content">
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-label">Usage Count</div>
+          <div class="stat-value" id="statUsage">0</div>
+          <div class="stat-sub">lifetime dispenses</div>
         </div>
-        <div class="row">
-          <div class="label">Last Dispense Time</div>
-          <div class="value" id="lastDispenseAt">--</div>
+        <div class="stat-card">
+          <div class="stat-label">Remaining</div>
+          <div class="stat-value good" id="statRemaining">25</div>
+          <div class="stat-sub" id="statRemainingPct">100% full</div>
         </div>
-        <div class="row">
-          <div class="label">Hand Detection</div>
-          <div class="value" id="handDetection">No hand detected</div>
+        <div class="stat-card">
+          <div class="stat-label">Status</div>
+          <div class="stat-value good" id="statStatus">NORMAL</div>
+          <div class="stat-sub" id="statStatusSub">threshold OK</div>
         </div>
-        <div class="row">
-          <div class="label">Dispensing Lockout</div>
-          <div class="value">2 seconds</div>
+        <div class="stat-card">
+          <div class="stat-label">Device State</div>
+          <div class="stat-value" id="statState" style="font-size:20px">IDLE</div>
+          <div class="stat-sub" id="statStateSub">ready</div>
         </div>
-        <div class="row">
-          <div class="label">Reading Mode</div>
-          <div class="value">Pump count + state machine</div>
-        </div>
-        <div class="row">
-          <div class="label">Data Source</div>
-          <div class="value" id="dataSource">Mock data following ESP32 contract</div>
-        </div>
-        <div class="row">
-          <div class="label">Last Sync</div>
-          <div class="value" id="lastSyncAt">--</div>
+        <div class="stat-card">
+          <div class="stat-label">Connectivity</div>
+          <div class="stat-value good" id="statOnline">ONLINE</div>
+          <div class="stat-sub" id="statOnlineSub">Blynk connected</div>
         </div>
       </div>
 
-      <div class="card">
-        <h2>Demo Controls</h2>
-        <div class="controls">
-          <div class="toggle-row">
-            <label for="systemEnabledToggle">System enabled</label>
-            <input type="checkbox" id="systemEnabledToggle" checked>
+      <div class="main-grid">
+        <div class="panel">
+          <div class="panel-title">Refill Prediction</div>
+          <div class="prediction-main">
+            <div class="prediction-time" id="predTime">--</div>
+            <div class="prediction-unit" id="predUnit">hrs remaining</div>
           </div>
-          <div class="toggle-row">
-            <label for="syncFailureToggle">Simulate sync failure</label>
-            <input type="checkbox" id="syncFailureToggle">
+          <div class="level-bar-wrap">
+            <div class="level-bar-track">
+              <div id="levelBarFill" class="level-bar-fill" style="width:40%; background:var(--green)"></div>
+            </div>
+            <div class="level-label">
+              <span id="levelBarLabel">40% · 10 pumps</span>
+              <span id="levelBarHint" style="color:var(--muted)">est. time-to-empty</span>
+            </div>
           </div>
-          <button id="simulateDispenseBtn">Simulate Sensor Dispense</button>
-          <button class="secondary" id="manualDispenseBtn">Manual Dispense</button>
-          <button class="secondary" id="resetAlertBtn">Reset Alert</button>
-          <button class="danger" id="resetBtn">Reset Dashboard</button>
+          <div class="prediction-rows">
+            <div class="pred-row"><span class="pred-label">Avg rate</span><span class="pred-val" id="predRate">-- disp/hr</span></div>
+            <div class="pred-row"><span class="pred-label">Session dispenses</span><span class="pred-val" id="predSession">0</span></div>
+            <div class="pred-row"><span class="pred-label">Refill risk</span><span class="pred-val" id="predRisk">LOW</span></div>
+            <div class="pred-row"><span class="pred-label">Operator hint</span><span class="pred-val" id="predHint">No action needed</span></div>
+          </div>
         </div>
-        <div class="footer-note">
-          This control panel is for software integration preview. The same fields map to Blynk virtual pins used by the ESP32 firmware.
-        </div>
-      </div>
-    </section>
 
-    <section class="card" style="margin-top: 16px;">
-      <h2>Event Timeline</h2>
-      <div id="eventTimeline" class="subtext">No events yet.</div>
-    </section>
+        <div class="panel">
+          <div class="panel-title">Usage — last 12 intervals</div>
+          <div class="graph-wrap"><canvas id="usageChart"></canvas></div>
+          <div class="graph-labels" id="graphLabels"></div>
+          <div style="margin-top:12px; display:flex; gap:16px;">
+            <div style="font-size:12px; color:var(--muted);">Peak: <span id="graphPeak" style="color:var(--text); font-family:'DM Mono',monospace;">--</span></div>
+            <div style="font-size:12px; color:var(--muted);">Avg: <span id="graphAvg" style="color:var(--text); font-family:'DM Mono',monospace;">--</span></div>
+            <div style="font-size:12px; color:var(--muted);">Total: <span id="graphTotal" style="color:var(--text); font-family:'DM Mono',monospace;">--</span></div>
+          </div>
+        </div>
 
-    <section class="panel-grid" style="margin-top: 16px;">
-      <div class="card">
-        <h2>Session Summary</h2>
-        <div class="row">
-          <div class="label">Session Dispenses</div>
-          <div class="value" id="sessionDispenses">0</div>
-        </div>
-        <div class="row">
-          <div class="label">Usage Intensity</div>
-          <div class="value" id="usageIntensity">LOW</div>
-        </div>
-        <div class="row">
-          <div class="label">Session Start</div>
-          <div class="value" id="sessionStartAt">--</div>
+        <div class="panel">
+          <div class="panel-title">Activity Feed</div>
+          <div class="feed-list" id="feedList"><div class="no-events">No events yet.</div></div>
         </div>
       </div>
 
-      <div class="card">
-        <h2>Rule-based Insights</h2>
-        <div class="row">
-          <div class="label">Refill Risk</div>
-          <div class="value" id="refillRisk">LOW</div>
+      <div class="bottom-grid">
+        <div class="panel">
+          <div class="panel-title">Operator Controls</div>
+          <div class="ctrl-stack">
+            <button id="btnSensor" class="ctrl-btn">Trigger sensor dispense</button>
+            <button id="btnManual" class="ctrl-btn">Manual dispense</button>
+            <button id="btnReset" class="ctrl-btn">Refill confirm / reset</button>
+            <button id="btnFullReset" class="ctrl-btn danger">Full dashboard reset</button>
+            <div class="ctrl-toggle"><span>Enable system</span><label class="toggle-switch"><input id="toggleEnabled" type="checkbox" checked><span class="slider"></span></label></div>
+            <div class="ctrl-toggle"><span>Simulate sync fail</span><label class="toggle-switch"><input id="toggleSyncFail" type="checkbox"><span class="slider"></span></label></div>
+          </div>
         </div>
-        <div class="row">
-          <div class="label">Operator Hint</div>
-          <div class="value" id="operatorHint">No action needed</div>
+
+        <div class="panel">
+          <div class="panel-title">Device Health</div>
+          <div class="health-rows">
+            <div class="health-row"><div class="health-label">State Machine</div><div id="hStateMachine" class="health-val good">RUNNING</div></div>
+            <div class="health-row"><div class="health-label">Dispense Lock</div><div id="hDispenseLock" class="health-val good">FREE</div></div>
+            <div class="health-row"><div class="health-label">Lockout</div><div id="hLockout" class="health-val">CLEAR</div></div>
+            <div class="health-row"><div class="health-label">Last Dispense</div><div id="hLastDispense" class="health-val">--</div></div>
+            <div class="health-row"><div class="health-label">Uptime</div><div id="hUptime" class="health-val">--</div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Session Summary</div>
+          <div class="health-rows">
+            <div class="health-row"><div class="health-label">Session Dispenses</div><div id="sSession" class="health-val">0</div></div>
+            <div class="health-row"><div class="health-label">Intensity</div><div id="sIntensity" class="health-val good">LOW</div></div>
+            <div class="health-row"><div class="health-label">Started</div><div id="sStart" class="health-val">--</div></div>
+            <div class="health-row"><div class="health-label">Refills</div><div id="sRefills" class="health-val">0</div></div>
+            <div class="health-row"><div class="health-label">Errors</div><div id="sErrors" class="health-val good">0</div></div>
+          </div>
         </div>
       </div>
-    </section>
+    </div>
   </div>
 
   <script>
-    const state = {
-      usageCount: 0,
-      remainingPumps: 25,
-      maxPumps: 25,
-      refillThresholdPumps: 0,
-      sanitizerLow: false,
-      deviceState: 'IDLE',
-      deviceMessage: 'System ready',
-      deviceOnline: true,
-      syncHealthy: true,
-      syncFailureSimulated: false,
-      systemEnabled: true,
-      handDetected: false,
-      lastDispenseAt: null,
-      dispenseInProgress: false,
-      lastSyncAt: null,
-      sessionDispenses: 0,
-      sessionStartAt: null,
-      eventTimeline: [],
-      dataSource: 'Mock data following ESP32 contract'
-    };
+// ─────────────────────────────────────────────────────────────
+// DEVICE — single source of truth
+// ─────────────────────────────────────────────────────────────
+const device = {
+  usageCount:         0,
+  sessionCount:       0,
+  remainingPumps:     25,
+  maxPumps:           25,
+  refillAlert:        false,
+  systemEnabled:      true,
+  dispenseInProgress: false,
+  lastDispenseAt:     null,
+  sessionStart:       new Date().toLocaleTimeString(),
+  refillCount:        0,
+  errorCount:         0,
+  online:             true,
+  syncFail:           false,
+  // fix #3: buckets store { count, ts } — labels anchored to real timestamps
+  usageHistory:       Array.from({ length: 12 }, () => ({ count: 0, ts: Date.now() })),
+  events:             [],
+  startMs:            Date.now(),
+};
 
-    function updateTimestamp() {
-      const now = new Date();
-      const formatted = now.toLocaleString();
-      document.getElementById('lastUpdatedPill').textContent = `Last updated: ${formatted}`;
-    }
+// ─────────────────────────────────────────────────────────────
+// SIM — animation timeline only, no logic authority
+// ─────────────────────────────────────────────────────────────
+const sim = { phase: 'idle' };
 
-    function render() {
-      const remainingPercent = calculateRemainingPercent();
-      document.getElementById('usageCount').textContent = state.usageCount;
-      document.getElementById('remainingPumps').textContent = `${state.remainingPumps}`;
-      document.getElementById('remainingPercent').textContent = `${remainingPercent}%`;
-      document.getElementById('refillThreshold').textContent = `${state.refillThresholdPumps} pumps`;
-      document.getElementById('deviceState').textContent = state.deviceState;
-      document.getElementById('deviceMessage').textContent = state.deviceMessage;
-      document.getElementById('handDetection').textContent = state.handDetected ? 'Valid hand detected' : 'No hand detected';
-      document.getElementById('lastDispenseAt').textContent = state.lastDispenseAt || '--';
-      document.getElementById('lastSyncAt').textContent = state.lastSyncAt || '--';
-      document.getElementById('dataSource').textContent = state.dataSource;
-      document.getElementById('sessionDispenses').textContent = state.sessionDispenses;
-      document.getElementById('usageIntensity').textContent = getUsageIntensity();
-      document.getElementById('sessionStartAt').textContent = state.sessionStartAt || '--';
-      document.getElementById('systemEnabledToggle').checked = state.systemEnabled;
-      document.getElementById('syncFailureToggle').checked = state.syncFailureSimulated;
-      document.getElementById('simulateDispenseBtn').disabled = !state.systemEnabled || state.dispenseInProgress;
-      document.getElementById('manualDispenseBtn').disabled = !state.systemEnabled || state.dispenseInProgress;
+// ─────────────────────────────────────────────────────────────
+// UI STATE — pure derivation, no mapping layer
+// ─────────────────────────────────────────────────────────────
+function uiState() {
+  if (!device.systemEnabled)     return 'DISABLED';
+  if (device.dispenseInProgress) return 'DISPENSING';
+  if (device.refillAlert)        return 'REFILL_REQUIRED';
+  return 'IDLE';
+}
 
-      const sanitizerStatusEl = document.getElementById('sanitizerStatus');
-      sanitizerStatusEl.textContent = state.sanitizerLow ? 'LOW' : 'NORMAL';
-      sanitizerStatusEl.classList.remove('good', 'warn', 'bad');
-      sanitizerStatusEl.classList.add(state.sanitizerLow ? 'bad' : 'good');
+// ─────────────────────────────────────────────────────────────
+// PREDICTION
+// ─────────────────────────────────────────────────────────────
+const CONFIG = {
+  PREDICTION_BUCKETS: 3
+};
 
-      const onlineEl = document.getElementById('deviceOnline');
-      onlineEl.textContent = state.deviceOnline ? 'ONLINE' : 'OFFLINE';
-      onlineEl.classList.remove('good', 'warn', 'bad');
-      onlineEl.classList.add(state.deviceOnline ? 'good' : 'bad');
+function getPrediction() {
+  const pct  = Math.round((device.remainingPumps / device.maxPumps) * 100);
+  const recentBuckets = device.usageHistory.slice(-CONFIG.PREDICTION_BUCKETS);
+  const recentDispenses = recentBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
+  const minutesTracked = (recentBuckets.length * 30000) / 60000;
+  const ratePerHour = minutesTracked > 0 ? (recentDispenses / minutesTracked) * 60 : null;
+  let timeStr = '--', unit = 'not enough data yet';
+  if (ratePerHour && ratePerHour > 0) {
+    const minsLeft = (device.remainingPumps / ratePerHour) * 60;
+    if (minsLeft < 60) { timeStr = Math.round(minsLeft); unit = 'min remaining'; }
+    else               { timeStr = (minsLeft / 60).toFixed(1); unit = 'hrs remaining'; }
+  }
+  if (!ratePerHour || ratePerHour <= 0) {
+    unit = 'not enough recent data yet';
+  }
+  const risk = pct <= 0 ? 'CRITICAL' : pct <= 16 ? 'HIGH' : pct <= 40 ? 'MEDIUM' : 'LOW';
+  const hint = !device.systemEnabled ? 'Enable system to allow dispensing'
+             : !device.online        ? 'Check Wi-Fi/Blynk connectivity'
+             : risk === 'CRITICAL'   ? 'Refill required — press reset after refilling'
+             : risk === 'HIGH'       ? 'Prepare refill soon'
+             : 'No action needed';
+  return { timeStr, unit, rate: ratePerHour ? ratePerHour.toFixed(1) : '--', risk, hint, pct };
+}
 
-      const syncEl = document.getElementById('syncStatus');
-      const syncMessageEl = document.getElementById('syncMessage');
-      syncEl.textContent = state.syncHealthy ? 'HEALTHY' : 'DEGRADED';
-      syncMessageEl.textContent = state.syncHealthy
-        ? 'Live update loop is stable'
-        : 'Sync delay detected, waiting for next successful update';
-      syncEl.classList.remove('good', 'warn', 'bad');
-      syncEl.classList.add(state.syncHealthy ? 'good' : 'warn');
+// ─────────────────────────────────────────────────────────────
+// GRAPH — fix #2: use parentElement.clientWidth, not offsetWidth
+// ─────────────────────────────────────────────────────────────
+const chartCanvas = document.getElementById('usageChart');
+const ctx = chartCanvas.getContext('2d');
 
-      const refillRisk = calculateRefillRisk();
-      const operatorHint = calculateOperatorHint(refillRisk);
-      document.getElementById('refillRisk').textContent = refillRisk;
-      document.getElementById('operatorHint').textContent = operatorHint;
+function drawChart(history) {
+  const W = Math.max(300, chartCanvas.parentElement.clientWidth);
+  const H = 120;
+  chartCanvas.width = W; chartCanvas.height = H;
+  const counts = history.map(b => b.count);
+  const max = Math.max(...counts, 1);
+  const pad = { l: 8, r: 8, t: 8, b: 8 };
+  const bw  = (W - pad.l - pad.r) / history.length;
+  ctx.clearRect(0, 0, W, H);
 
-      const timelineEl = document.getElementById('eventTimeline');
-      if (state.eventTimeline.length === 0) {
-        timelineEl.textContent = 'No events yet.';
-      } else {
-        timelineEl.innerHTML = state.eventTimeline
-          .slice(0, 8)
-          .map((entry) => `${entry.time} - ${entry.message}`)
-          .join('<br>');
-      }
+  const grad = ctx.createLinearGradient(0, pad.t, 0, H - pad.b);
+  grad.addColorStop(0, 'rgba(56,189,248,0.3)');
+  grad.addColorStop(1, 'rgba(56,189,248,0.0)');
 
-      updateTimestamp();
-    }
+  const pts = counts.map((v, i) => ({
+    x: pad.l + i * bw + bw / 2,
+    y: H - pad.b - ((v / max) * (H - pad.t - pad.b))
+  }));
 
-    function calculateRemainingPercent() {
-      return Math.max(0, Math.min(100, Math.round((state.remainingPumps / state.maxPumps) * 100)));
-    }
+  ctx.beginPath();
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.lineTo(pts[pts.length - 1].x, H - pad.b);
+  ctx.lineTo(pts[0].x, H - pad.b);
+  ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
 
-    function calculateRefillRisk() {
-      if (state.sanitizerLow || state.remainingPumps <= state.refillThresholdPumps) {
-        return 'CRITICAL';
-      }
+  ctx.beginPath(); ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
 
-      const remainingPercent = calculateRemainingPercent();
-      if (remainingPercent <= 20) {
-        return 'HIGH';
-      }
-      if (remainingPercent <= 40) {
-        return 'MEDIUM';
-      }
+  pts.forEach((p, i) => {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = counts[i] === max ? '#fbbf24' : '#38bdf8'; ctx.fill();
+  });
+}
 
-      return 'LOW';
-    }
+// ─────────────────────────────────────────────────────────────
+// FEED
+// ─────────────────────────────────────────────────────────────
+function recordEvent(type, msg) {
+  device.events.unshift({ type, msg, time: new Date().toLocaleTimeString() });
+  if (device.events.length > 30) device.events.pop();
+}
+function renderFeed() {
+  const el = document.getElementById('feedList');
+  if (!device.events.length) { el.innerHTML = '<div class="no-events">No events yet.</div>'; return; }
+  el.innerHTML = device.events.slice(0, 12).map(e => `
+    <div class="feed-item">
+      <span class="feed-tag ${e.type}">${e.type.toUpperCase()}</span>
+      <div><div class="feed-msg">${e.msg}</div><div class="feed-time">${e.time}</div></div>
+    </div>`).join('');
+}
 
-    function calculateOperatorHint(refillRisk) {
-      if (!state.systemEnabled) {
-        return 'Enable system to allow dispensing';
-      }
-      if (!state.syncHealthy) {
-        return 'Check Wi-Fi/Blynk connectivity';
-      }
-      if (refillRisk === 'CRITICAL') {
-        return 'Refill required now and reset alert';
-      }
-      if (refillRisk === 'HIGH') {
-        return 'Prepare refill soon';
-      }
-      if (state.deviceState === 'ERROR') {
-        return 'Inspect device and run recovery';
-      }
+// ─────────────────────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const colors = { info: '#38bdf8', ok: '#4ade80', warn: '#fbbf24', error: '#f87171' };
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<div class="toast-dot" style="background:${colors[type]}"></div><span>${msg}</span>`;
+  document.getElementById('toastZone').appendChild(el);
+  setTimeout(() => { el.style.animation = 'fadeOut 0.3s ease forwards'; setTimeout(() => el.remove(), 300); }, 3000);
+}
 
-      return 'No action needed';
-    }
+// ─────────────────────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────────────────────
+function render() {
+  const state = uiState();
+  const pred  = getPrediction();
+  const pct   = pred.pct;
 
-    function getUsageIntensity() {
-      if (state.sessionDispenses >= 10) {
-        return 'HIGH';
-      }
-      if (state.sessionDispenses >= 4) {
-        return 'MEDIUM';
-      }
+  document.getElementById('statUsage').textContent = device.usageCount;
+  const remEl = document.getElementById('statRemaining');
+  remEl.textContent = device.remainingPumps;
+  remEl.className = 'stat-value ' + (pct <= 16 ? 'bad' : pct <= 40 ? 'warn' : 'good');
+  document.getElementById('statRemainingPct').textContent = `${pct}% full`;
 
-      return 'LOW';
-    }
+  const statusEl = document.getElementById('statStatus');
+  statusEl.textContent = device.refillAlert ? 'LOW' : 'NORMAL';
+  statusEl.className = 'stat-value ' + (device.refillAlert ? 'bad' : 'good');
+  document.getElementById('statStatusSub').textContent = device.refillAlert ? 'refill required' : 'threshold OK';
 
-    function recordEvent(message) {
-      state.eventTimeline.unshift({
-        time: new Date().toLocaleTimeString(),
-        message
-      });
-    }
+  const stEl = document.getElementById('statState');
+  stEl.textContent = state;
+  stEl.className = 'stat-value' + (state === 'DISPENSING' ? ' warn' : state === 'REFILL_REQUIRED' ? ' bad' : '');
+  document.getElementById('statStateSub').textContent = device.systemEnabled ? 'enabled' : 'disabled';
 
-    function updateSyncStatus(success) {
-      state.syncHealthy = success;
-      state.deviceOnline = success;
-      state.lastSyncAt = success ? new Date().toLocaleTimeString() : state.lastSyncAt;
-    }
+  const onEl = document.getElementById('statOnline');
+  onEl.textContent = device.online ? 'ONLINE' : 'OFFLINE';
+  onEl.className = 'stat-value ' + (device.online ? 'good' : 'bad');
+  document.getElementById('statOnlineSub').textContent = device.online ? 'Blynk connected' : 'connection lost';
 
-    function setDisabledState() {
-      state.deviceState = 'DISABLED';
-      state.deviceMessage = 'System disabled from dashboard control';
-      state.handDetected = false;
-      recordEvent('System disabled by operator');
-      render();
-    }
+  document.getElementById('topbarSub').textContent =
+    `state: ${state.toLowerCase()} · ${device.remainingPumps}/${device.maxPumps} pumps · ${device.online ? 'online' : 'offline'}`;
 
-    function simulateDispense(source = 'sensor') {
-      if (!state.systemEnabled || state.dispenseInProgress) {
-        return;
-      }
+  document.getElementById('predTime').textContent    = pred.timeStr;
+  document.getElementById('predUnit').textContent    = pred.unit;
+  document.getElementById('predRate').textContent =
+    pred.rate !== '--' ? `${pred.rate} disp/hr` : '--';
+  document.getElementById('predSession').textContent = device.sessionCount;
+  const riskEl = document.getElementById('predRisk');
+  riskEl.textContent = pred.risk;
+  riskEl.style.color = pred.risk === 'CRITICAL' ? 'var(--red)' : pred.risk === 'HIGH' ? 'var(--yellow)' : 'var(--green)';
+  document.getElementById('predHint').textContent = pred.hint;
 
-      if (!state.sessionStartAt) {
-        state.sessionStartAt = new Date().toLocaleTimeString();
-      }
+  const barFill = document.getElementById('levelBarFill');
+  barFill.style.width = pct + '%';
+  barFill.style.background = pct <= 16 ? 'var(--red)' : pct <= 40 ? 'var(--yellow)' : 'var(--green)';
+  document.getElementById('levelBarLabel').textContent = `${pct}% · ${device.remainingPumps} pumps`;
 
-      state.dispenseInProgress = true;
-      state.handDetected = true;
-      state.deviceState = 'HAND_DETECTED';
-      state.deviceMessage = source === 'manual' ? 'Manual dispense requested from dashboard' : 'Valid detection confirmed';
-      recordEvent(source === 'manual' ? 'Manual dispense requested' : 'Sensor dispense requested');
-      render();
+  drawChart(device.usageHistory);
+  // fix #3: labels from stored bucket timestamps, not computed from now
+  document.getElementById('graphLabels').innerHTML = device.usageHistory.map((b, i) =>
+    `<span>${i % 3 === 0 ? new Date(b.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>`
+  ).join('');
+  const counts = device.usageHistory.map(b => b.count);
+  document.getElementById('graphPeak').textContent  = Math.max(...counts);
+  document.getElementById('graphAvg').textContent   = (counts.reduce((a, b) => a + b, 0) / counts.length).toFixed(1);
+  document.getElementById('graphTotal').textContent = counts.reduce((a, b) => a + b, 0);
 
-      setTimeout(() => {
-        state.deviceState = 'DISPENSING';
-        state.deviceMessage = 'Servo press triggered';
-        recordEvent('Dispensing cycle started');
-        render();
-      }, 500);
+  renderFeed();
 
-      setTimeout(() => {
-        state.usageCount += 1;
-        state.sessionDispenses += 1;
-        state.remainingPumps = Math.max(0, state.remainingPumps - 1);
-        state.lastDispenseAt = new Date().toLocaleTimeString();
-        state.deviceState = 'WAIT STABILISE';
-        state.deviceMessage = 'Applying lockout and pump-count update';
-        render();
-      }, 1200);
+  document.getElementById('hStateMachine').textContent = device.systemEnabled ? 'RUNNING' : 'HALTED';
+  document.getElementById('hStateMachine').className   = 'health-val ' + (device.systemEnabled ? 'good' : 'warn');
+  document.getElementById('hDispenseLock').textContent = device.dispenseInProgress ? 'LOCKED' : 'FREE';
+  document.getElementById('hDispenseLock').className   = 'health-val ' + (device.dispenseInProgress ? 'warn' : 'good');
+  document.getElementById('hLockout').textContent      = device.dispenseInProgress ? 'ACTIVE' : 'CLEAR';
+  document.getElementById('hLastDispense').textContent = device.lastDispenseAt || '--';
+  const upSec = Math.floor((Date.now() - device.startMs) / 1000);
+  document.getElementById('hUptime').textContent = upSec > 60 ? `${Math.floor(upSec / 60)}m ${upSec % 60}s` : `${upSec}s`;
 
-      setTimeout(() => {
-        state.sanitizerLow = state.remainingPumps <= state.refillThresholdPumps;
-        state.deviceState = state.sanitizerLow ? 'REFILL_REQUIRED' : 'UPDATE_STATUS';
-        state.deviceMessage = state.sanitizerLow ? 'Low sanitizer warning generated' : 'System stable and normal';
-        if (state.sanitizerLow) {
-          recordEvent('Refill alert triggered');
-        }
-        render();
-      }, 2600);
+  document.getElementById('sSession').textContent = device.sessionCount;
+  const intensity = device.sessionCount >= 10 ? 'HIGH' : device.sessionCount >= 4 ? 'MEDIUM' : 'LOW';
+  const intEl = document.getElementById('sIntensity');
+  intEl.textContent = intensity;
+  intEl.className = 'health-val ' + (intensity === 'HIGH' ? 'bad' : intensity === 'MEDIUM' ? 'warn' : 'good');
+  document.getElementById('sStart').textContent   = device.sessionStart;
+  document.getElementById('sRefills').textContent = device.refillCount;
+  const errEl = document.getElementById('sErrors');
+  errEl.textContent = device.errorCount;
+  errEl.className = 'health-val ' + (device.errorCount > 0 ? 'warn' : 'good');
 
-      setTimeout(() => {
-        state.handDetected = false;
-        state.dispenseInProgress = false;
-        state.deviceState = state.sanitizerLow ? 'REFILL_REQUIRED' : 'IDLE';
-        state.deviceMessage = state.sanitizerLow ? 'Refill required before normal operation' : 'System ready';
-        recordEvent('Dispense cycle completed');
-        render();
-      }, 3600);
-    }
+  document.getElementById('toggleEnabled').checked  = device.systemEnabled;
+  document.getElementById('toggleSyncFail').checked = device.syncFail;
+  document.getElementById('btnSensor').disabled = !device.systemEnabled || device.dispenseInProgress;
+  document.getElementById('btnManual').disabled = !device.systemEnabled || device.dispenseInProgress;
+}
 
-    function resetAlert() {
-      state.remainingPumps = state.maxPumps;
-      state.sanitizerLow = false;
-      state.deviceState = state.systemEnabled ? 'IDLE' : 'DISABLED';
-      state.deviceMessage = 'Alert reset after refill/testing';
-      state.sessionDispenses = 0;
-      state.sessionStartAt = new Date().toLocaleTimeString();
-      recordEvent('Refill alert reset');
-      render();
-    }
-
-    function resetDashboard() {
-      state.usageCount = 0;
-      state.remainingPumps = state.maxPumps;
-      state.sanitizerLow = false;
-      state.systemEnabled = true;
-      state.syncHealthy = true;
-      state.syncFailureSimulated = false;
-      state.deviceOnline = true;
-      state.deviceState = 'IDLE';
-      state.deviceMessage = 'System ready';
-      state.handDetected = false;
-      state.lastDispenseAt = null;
-      state.lastSyncAt = null;
-      state.sessionDispenses = 0;
-      state.sessionStartAt = null;
-      state.dispenseInProgress = false;
-      state.eventTimeline = [];
-      render();
-    }
-
-    function syncTick() {
-      const success = !state.syncFailureSimulated;
-      updateSyncStatus(success);
-      if (!success) {
-        recordEvent('Sync failure simulated');
-      }
-      render();
-    }
-
-    document.getElementById('simulateDispenseBtn').addEventListener('click', () => simulateDispense('sensor'));
-    document.getElementById('manualDispenseBtn').addEventListener('click', () => simulateDispense('manual'));
-    document.getElementById('resetAlertBtn').addEventListener('click', resetAlert);
-    document.getElementById('resetBtn').addEventListener('click', resetDashboard);
-    document.getElementById('syncFailureToggle').addEventListener('change', (event) => {
-      state.syncFailureSimulated = event.target.checked;
-      recordEvent(state.syncFailureSimulated ? 'Sync failure mode enabled' : 'Sync failure mode disabled');
-      syncTick();
-    });
-    document.getElementById('systemEnabledToggle').addEventListener('change', (event) => {
-      state.systemEnabled = event.target.checked;
-      if (!state.systemEnabled) {
-        setDisabledState();
-        return;
-      }
-
-      state.deviceState = state.sanitizerLow ? 'REFILL_REQUIRED' : 'IDLE';
-      state.deviceMessage = state.sanitizerLow ? 'Refill required before normal operation' : 'System ready';
-      recordEvent('System enabled');
-      render();
-    });
-
-    setInterval(syncTick, 5000);
-    state.sessionDispenses = 0;
-    state.sessionStartAt = new Date().toLocaleTimeString();
+// ─────────────────────────────────────────────────────────────
+// DISPENSE — fix #4: history bucket always in sync with sessionCount
+// ─────────────────────────────────────────────────────────────
+function doDispense(source) {
+  if (!device.systemEnabled || device.dispenseInProgress || device.remainingPumps <= 0) return;
+  device.dispenseInProgress = true;
+  sim.phase = 'triggered';
+  recordEvent('info', `${source === 'manual' ? 'Manual' : 'Sensor'} dispense triggered`);
+  render();
+  setTimeout(() => { sim.phase = 'motor_on'; }, 400);
+  setTimeout(() => {
+    sim.phase = 'settling';
+    device.usageCount++;
+    device.sessionCount++;
+    device.remainingPumps = Math.max(0, device.remainingPumps - 1);
+    device.lastDispenseAt = new Date().toLocaleTimeString();
+    device.usageHistory[device.usageHistory.length - 1].count++;
     render();
+  }, 1000);
+  setTimeout(() => {
+    sim.phase = 'done';
+    device.dispenseInProgress = false;
+    device.refillAlert = device.remainingPumps <= 0;
+    if (device.refillAlert) {
+      recordEvent('warn', 'Refill alert — bottle empty');
+      toast('Refill required — bottle empty', 'warn');
+    } else {
+      recordEvent('ok', 'Dispense complete');
+    }
+    render();
+  }, 2400);
+}
+
+// ─────────────────────────────────────────────────────────────
+// CONTROLS
+// ─────────────────────────────────────────────────────────────
+document.getElementById('btnSensor').addEventListener('click', () => doDispense('sensor'));
+document.getElementById('btnManual').addEventListener('click', () => doDispense('manual'));
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  device.remainingPumps = device.maxPumps;
+  device.refillAlert = false; device.sessionCount = 0; device.refillCount++;
+  recordEvent('ok', 'Refill confirmed — alert reset');
+  toast('Alert reset — bottle refilled', 'ok');
+  render();
+});
+
+document.getElementById('btnFullReset').addEventListener('click', () => {
+  Object.assign(device, {
+    usageCount: 0, sessionCount: 0, remainingPumps: device.maxPumps,
+    refillAlert: false, systemEnabled: true, online: true, syncFail: false,
+    dispenseInProgress: false, lastDispenseAt: null, refillCount: 0, errorCount: 0,
+    events: [], usageHistory: Array.from({ length: 12 }, () => ({ count: 0, ts: Date.now() })),
+    startMs: Date.now(), sessionStart: new Date().toLocaleTimeString(),
+  });
+  sim.phase = 'idle';
+  recordEvent('info', 'Dashboard reset');
+  render();
+});
+
+document.getElementById('toggleEnabled').addEventListener('change', e => {
+  device.systemEnabled = e.target.checked;
+  recordEvent(device.systemEnabled ? 'ok' : 'warn', `System ${device.systemEnabled ? 'enabled' : 'disabled'}`);
+  render();
+});
+
+document.getElementById('toggleSyncFail').addEventListener('change', e => {
+  device.syncFail = e.target.checked; device.online = !device.syncFail;
+  recordEvent(device.syncFail ? 'error' : 'ok', device.syncFail ? 'Sync failure simulated' : 'Sync restored');
+  if (device.syncFail) toast('Sync failure simulated', 'error');
+  render();
+});
+
+// ─────────────────────────────────────────────────────────────
+// INTERVALS
+// ─────────────────────────────────────────────────────────────
+setInterval(() => { document.getElementById('clockPill').textContent = new Date().toLocaleTimeString(); }, 1000);
+// fix #3: new bucket gets a real timestamp on creation
+setInterval(() => { device.usageHistory.shift(); device.usageHistory.push({ count: 0, ts: Date.now() }); render(); }, 30000);
+setInterval(() => { device.online = !device.syncFail; render(); }, 5000);
+
+// fix #2: defer first render until after layout paint so canvas has real width
+requestAnimationFrame(render);
   </script>
 </body>
 </html>
