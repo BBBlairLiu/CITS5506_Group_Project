@@ -224,62 +224,83 @@
         </div>
       </div>
 
-      <div class="card">
-        <h2>Demo Controls</h2>
-        <div class="controls">
-          <div class="toggle-row">
-            <label for="systemEnabledToggle">System enabled</label>
-            <input type="checkbox" id="systemEnabledToggle" checked>
+      <div class="main-grid">
+        <div class="panel">
+          <div class="panel-title">Refill Prediction</div>
+          <div class="prediction-main">
+            <div class="prediction-time" id="predTime">--</div>
+            <div class="prediction-unit" id="predUnit">hrs remaining</div>
           </div>
-          <div class="toggle-row">
-            <label for="syncFailureToggle">Simulate sync failure</label>
-            <input type="checkbox" id="syncFailureToggle">
+          <div class="level-bar-wrap">
+            <div class="level-bar-track">
+              <div id="levelBarFill" class="level-bar-fill" style="width:40%; background:var(--green)"></div>
+            </div>
+            <div class="level-label">
+              <span id="levelBarLabel">40% · 10 pumps</span>
+              <span id="levelBarHint" style="color:var(--muted)">est. time-to-empty</span>
+            </div>
           </div>
-          <button id="simulateDispenseBtn">Simulate Sensor Dispense</button>
-          <button class="secondary" id="manualDispenseBtn">Manual Dispense</button>
-          <button class="secondary" id="resetAlertBtn">Reset Alert</button>
-          <button class="danger" id="resetBtn">Reset Dashboard</button>
+          <div class="prediction-rows">
+            <div class="pred-row"><span class="pred-label">Avg rate</span><span class="pred-val" id="predRate">-- disp/hr</span></div>
+            <div class="pred-row"><span class="pred-label">Session dispenses</span><span class="pred-val" id="predSession">0</span></div>
+            <div class="pred-row"><span class="pred-label">Refill risk</span><span class="pred-val" id="predRisk">LOW</span></div>
+            <div class="pred-row"><span class="pred-label">Operator hint</span><span class="pred-val" id="predHint">No action needed</span></div>
+          </div>
         </div>
-        <div class="footer-note">
-          This control panel is for software integration preview. The same fields map to Blynk virtual pins used by the ESP32 firmware.
-        </div>
-      </div>
-    </section>
 
-    <section class="card" style="margin-top: 16px;">
-      <h2>Event Timeline</h2>
-      <div id="eventTimeline" class="subtext">No events yet.</div>
-    </section>
+        <div class="panel">
+          <div class="panel-title">Usage — last 12 intervals</div>
+          <div class="graph-wrap"><canvas id="usageChart"></canvas></div>
+          <div class="graph-labels" id="graphLabels"></div>
+          <div style="margin-top:12px; display:flex; gap:16px;">
+            <div style="font-size:12px; color:var(--muted);">Peak: <span id="graphPeak" style="color:var(--text); font-family:'DM Mono',monospace;">--</span></div>
+            <div style="font-size:12px; color:var(--muted);">Avg: <span id="graphAvg" style="color:var(--text); font-family:'DM Mono',monospace;">--</span></div>
+            <div style="font-size:12px; color:var(--muted);">Total: <span id="graphTotal" style="color:var(--text); font-family:'DM Mono',monospace;">--</span></div>
+          </div>
+        </div>
 
-    <section class="panel-grid" style="margin-top: 16px;">
-      <div class="card">
-        <h2>Session Summary</h2>
-        <div class="row">
-          <div class="label">Session Dispenses</div>
-          <div class="value" id="sessionDispenses">0</div>
-        </div>
-        <div class="row">
-          <div class="label">Usage Intensity</div>
-          <div class="value" id="usageIntensity">LOW</div>
-        </div>
-        <div class="row">
-          <div class="label">Session Start</div>
-          <div class="value" id="sessionStartAt">--</div>
+        <div class="panel">
+          <div class="panel-title">Activity Feed</div>
+          <div class="feed-list" id="feedList"><div class="no-events">No events yet.</div></div>
         </div>
       </div>
 
-      <div class="card">
-        <h2>Rule-based Insights</h2>
-        <div class="row">
-          <div class="label">Refill Risk</div>
-          <div class="value" id="refillRisk">LOW</div>
+      <div class="bottom-grid">
+        <div class="panel">
+          <div class="panel-title">Operator Controls</div>
+          <div class="ctrl-stack">
+            <button id="btnSensor" class="ctrl-btn">Trigger sensor dispense</button>
+            <button id="btnManual" class="ctrl-btn">Manual dispense</button>
+            <button id="btnReset" class="ctrl-btn">Refill confirm / reset</button>
+            <button id="btnFullReset" class="ctrl-btn danger">Full dashboard reset</button>
+            <div class="ctrl-toggle"><span>Enable system</span><label class="toggle-switch"><input id="toggleEnabled" type="checkbox" checked><span class="slider"></span></label></div>
+            <div class="ctrl-toggle"><span>Simulate sync fail</span><label class="toggle-switch"><input id="toggleSyncFail" type="checkbox"><span class="slider"></span></label></div>
+          </div>
         </div>
-        <div class="row">
-          <div class="label">Operator Hint</div>
-          <div class="value" id="operatorHint">No action needed</div>
+
+        <div class="panel">
+          <div class="panel-title">Device Health</div>
+          <div class="health-rows">
+            <div class="health-row"><div class="health-label">State Machine</div><div id="hStateMachine" class="health-val good">RUNNING</div></div>
+            <div class="health-row"><div class="health-label">Dispense Lock</div><div id="hDispenseLock" class="health-val good">FREE</div></div>
+            <div class="health-row"><div class="health-label">Lockout</div><div id="hLockout" class="health-val">CLEAR</div></div>
+            <div class="health-row"><div class="health-label">Last Dispense</div><div id="hLastDispense" class="health-val">--</div></div>
+            <div class="health-row"><div class="health-label">Uptime</div><div id="hUptime" class="health-val">--</div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Session Summary</div>
+          <div class="health-rows">
+            <div class="health-row"><div class="health-label">Session Dispenses</div><div id="sSession" class="health-val">0</div></div>
+            <div class="health-row"><div class="health-label">Intensity</div><div id="sIntensity" class="health-val good">LOW</div></div>
+            <div class="health-row"><div class="health-label">Started</div><div id="sStart" class="health-val">--</div></div>
+            <div class="health-row"><div class="health-label">Refills</div><div id="sRefills" class="health-val">0</div></div>
+            <div class="health-row"><div class="health-label">Errors</div><div id="sErrors" class="health-val good">0</div></div>
+          </div>
         </div>
       </div>
-    </section>
+    </div>
   </div>
 
   <script>
