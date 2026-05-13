@@ -8,10 +8,20 @@
   are ready and replace the hardware adapter functions near the bottom.
 */
 
-// Blynk configuration - replace with actual template ID, name, and auth token from your Blynk project
-#define BLYNK_TEMPLATE_ID "REPLACE_WITH_TEMPLATE_ID"
+// Blynk configuration
 #define BLYNK_TEMPLATE_NAME "SmartSan Prototype"
+
+// Copy secrets.example.h to secrets.h and fill in local credentials before upload.
+// secrets.h is intentionally ignored by git so Blynk tokens and Wi-Fi passwords
+// are not pushed to the remote repository.
+#if __has_include("secrets.h")
+#include "secrets.h"
+#else
+#define BLYNK_TEMPLATE_ID "REPLACE_WITH_TEMPLATE_ID"
 #define BLYNK_AUTH_TOKEN "REPLACE_WITH_DEVICE_AUTH_TOKEN"
+const char WIFI_SSID[] = "REPLACE_WITH_WIFI_NAME";
+const char WIFI_PASS[] = "REPLACE_WITH_WIFI_PASSWORD";
+#endif
 
 // IR sensor configuration - adjust as needed for the actual sensor and placement
 #define PIN_IR_SENSOR     2
@@ -44,10 +54,6 @@ const int SERVO_PRESS_DEG = 60;
 const int SERVO_PRESS_MS  = 400;
 const int SERVO_RETURN_MS = 300;
 const int SERVO_SETTLE_MS = 100;
-
-// WiFi credentials - replace with actual network details
-const char WIFI_SSID[] = "REPLACE_WITH_WIFI_NAME";
-const char WIFI_PASS[] = "REPLACE_WITH_WIFI_PASSWORD";
 
 // Blynk virtual pin definitions
 const int PIN_USAGE_COUNT = V0;
@@ -410,4 +416,4 @@ void performDispense() {
 
   Serial.println("[SERVO] Cycle complete");
 #endif
-} 
+}

@@ -55,7 +55,9 @@ By default, the sketch uses mock hardware mode:
 - Blynk virtual pins are updated using the planned dashboard data contract
 - hardware adapter functions are isolated so they can later be replaced with real IR, servo, and HX711 logic
 
-Before uploading to an ESP32, replace the placeholder Blynk and Wi-Fi values in the sketch.
+Before uploading to an ESP32, copy `firmware/SmartSanESP32/secrets.example.h` to `firmware/SmartSanESP32/secrets.h` and fill in local Blynk and Wi-Fi values. The local `secrets.h` file is ignored by git.
+
+For team testing instructions, follow `docs/team_testing_guide.md`.
 
 ## Software Documents
 
@@ -64,6 +66,7 @@ Before uploading to an ESP32, replace the placeholder Blynk and Wi-Fi values in 
 - `docs/data_contract.md` defines the fields shared between firmware and dashboard.
 - `docs/integration_test_plan.md` lists the hardware integration and evidence checklist.
 - `docs/software_test_checklist.md` lists software-only validation scenarios before hardware integration.
+- `docs/team_testing_guide.md` gives the step-by-step Blynk, mock firmware, and hardware test handoff.
 
 ## How to Run
 
