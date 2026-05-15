@@ -7,13 +7,15 @@ This document defines the software interface between the ESP32 firmware, the Bly
 | Field | Type | Unit | Source | Update Frequency | Description |
 | --- | --- | --- | --- | --- | --- |
 | `usageCount` | Integer | events | ESP32 state | After dispense and every 5 seconds | Total valid dispense events since reset |
-| `remainingPumps` | Integer | pumps | ESP32 pump counter | After dispense and every 5 seconds | Estimated remaining dispense actions in current refill cycle |
-| `remainingPercent` | Integer | % | ESP32 calculation | After dispense and every 5 seconds | Estimated sanitizer remaining percentage |
+| `liquidWeightGrams` | Float | g | HX711 load cell | Every 5 seconds and after dispense | Estimated remaining liquid weight after empty-bottle tare |
+| `remainingPercent` | Integer | % | ESP32 calculation | After measurement and after dispense | Estimated sanitizer remaining percentage from liquid weight |
+| `distanceMm` | Integer | mm | VL53L1X distance sensor | Every 5 seconds and during detection | Corrected hand-distance reading |
+| `lastDispenseGrams` | Float | g | ESP32 calculation | After dispense stabilisation | Estimated liquid used by the latest accepted dispense |
 | `refillAlert` | Boolean | none | ESP32 threshold logic | On change and every 5 seconds | `true` when refill is required |
 | `deviceState` | String | none | ESP32 state machine | On state change | Current software state |
 | `deviceOnline` | Boolean | none | ESP32/Blynk connection | Every 5 seconds | Whether the device is connected |
 | `systemEnabled` | Boolean | none | Blynk/local control | On change | Allows or blocks dispensing |
-| `handDetected` | Boolean | none | IR sensor | During detection and state update | Whether a valid hand event is active |
+| `handDetected` | Boolean | none | VL53L1X distance range | During detection and state update | Whether a valid hand event is active |
 | `lastDispenseAt` | String | time | ESP32 clock/runtime | After dispense | Last successful dispense timestamp or runtime label |
 | `message` | String | none | ESP32 state machine | On state change | Human-readable dashboard message |
 
@@ -35,24 +37,32 @@ Use these values consistently in firmware and dashboard displays:
 
 | Name | Default | Purpose |
 | --- | --- | --- |
-| `maxPumps` | `25` | Number of dispense actions expected from a full refill |
-| `refillThresholdPumps` | `0` | Trigger refill alert when remaining pump count is at or below this value |
+| `fullLiquidGrams` | `600 g` | Weight used as the full-liquid calibration reference for the demo |
+| `refillAlertPercent` | `10%` | Trigger refill alert when remaining percentage is at or below this value |
+| `minHandDistanceMm` | `70 mm` | Lower bound of distance-trigger detection range |
+| `maxHandDistanceMm` | `150 mm` | Upper bound of distance-trigger detection range |
 | `dispenseLockoutMs` | `2000 ms` | Prevent repeated dispensing from one hand gesture |
-| `stabiliseDelayMs` | `1200 ms` | Wait after servo movement before reading weight |
+| `stabiliseDelayMs` | `1200 ms` | Wait after servo movement before calculating post-dispense weight |
 | `statusIntervalMs` | `5000 ms` | Regular idle dashboard update interval |
 
 ## Alert Logic
 
-The basic refill condition is:
-
-```text
-refillAlert = remainingPumps <= refillThresholdPumps
-```
-
 The remaining percentage is:
 
 ```text
-remainingPercent = clamp((remainingPumps / maxPumps) * 100, 0, 100)
+remainingPercent = clamp((liquidWeightGrams / fullLiquidGrams) * 100, 0, 100)
+```
+
+The refill condition is:
+
+```text
+refillAlert = remainingPercent <= refillAlertPercent
+```
+
+The latest dispense amount is:
+
+```text
+lastDispenseGrams = max(previousLiquidWeightGrams - currentLiquidWeightGrams, 0)
 ```
 
 ## Control Inputs
@@ -69,6 +79,7 @@ Before hardware arrives, firmware functions may return simulated values. After h
 
 - `readHandDetected()`
 - `performDispense()`
-- `readRemainingPumps()` (or future `readStableWeight()` when HX711 is reintroduced)
+- `readWeightMeasurement()`
+- `sampleMeasurements()`
 
 The state machine, Blynk virtual pin mapping, and dashboard fields should remain unchanged.
