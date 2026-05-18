@@ -2,7 +2,8 @@
   SmartSan ESP32 firmware.
 
   Mock mode keeps the original Serial Monitor test path. Real hardware mode uses
-  the hardware group's VL53L1X distance sensor, HX711 load cell, and servo logic.
+  the hardware group's VL53L1X distance sensor, HX711 load cell, servo logic,
+  and optional status LEDs.
 */
 
 // Blynk configuration
@@ -23,6 +24,9 @@ const char WIFI_PASS[] = "REPLACE_WITH_WIFI_PASSWORD";
 // Set to 0 after the hardware wiring and Arduino libraries are ready.
 #define USE_MOCK_HARDWARE 1
 
+// Optional: set to 1 only after wiring LEDs to the status LED pins below.
+#define ENABLE_STATUS_LEDS 0
+
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
 
@@ -41,6 +45,13 @@ const int PIN_LOADCELL_DOUT = D2;
 const int PIN_LOADCELL_SCK = D3;
 const int PIN_DISTANCE_SDA = D4;
 const int PIN_DISTANCE_SCL = D5;
+#endif
+
+#if !USE_MOCK_HARDWARE && ENABLE_STATUS_LEDS
+// Optional status LEDs. Keep D1-D5 reserved for servo, HX711, and VL53L1X.
+const int PIN_LED_GREEN = D6;
+const int PIN_LED_ORANGE = D7;
+const int PIN_LED_RED = D8;
 #endif
 
 // Distance trigger settings
@@ -183,6 +194,44 @@ void updateRemainingMetrics() {
 
 void updateRefillAlert() {
   refillAlert = remainingPercent <= REFILL_ALERT_PERCENT;
+}
+
+void setupStatusLeds() {
+#if !USE_MOCK_HARDWARE && ENABLE_STATUS_LEDS
+  pinMode(PIN_LED_GREEN, OUTPUT);
+  pinMode(PIN_LED_ORANGE, OUTPUT);
+  pinMode(PIN_LED_RED, OUTPUT);
+
+  digitalWrite(PIN_LED_GREEN, LOW);
+  digitalWrite(PIN_LED_ORANGE, LOW);
+  digitalWrite(PIN_LED_RED, LOW);
+#endif
+}
+
+void setStatusLeds(bool greenOn, bool orangeOn, bool redOn) {
+#if !USE_MOCK_HARDWARE && ENABLE_STATUS_LEDS
+  digitalWrite(PIN_LED_GREEN, greenOn ? HIGH : LOW);
+  digitalWrite(PIN_LED_ORANGE, orangeOn ? HIGH : LOW);
+  digitalWrite(PIN_LED_RED, redOn ? HIGH : LOW);
+#else
+  (void)greenOn;
+  (void)orangeOn;
+  (void)redOn;
+#endif
+}
+
+void updateStatusLeds() {
+  if (deviceState == STATE_ERROR) {
+    setStatusLeds(false, false, true);
+  } else if (!systemEnabled || deviceState == STATE_DISABLED) {
+    setStatusLeds(false, true, false);
+  } else if (refillAlert) {
+    setStatusLeds(false, false, true);
+  } else if (remainingPercent <= 40) {
+    setStatusLeds(false, true, false);
+  } else {
+    setStatusLeds(true, false, false);
+  }
 }
 
 void printCsvHeaderOnce() {
@@ -330,6 +379,7 @@ void sampleMeasurements(const char* eventName) {
 
   updateRemainingMetrics();
   updateRefillAlert();
+  updateStatusLeds();
   printCsvSample(eventName);
 }
 
@@ -365,6 +415,7 @@ void setState(DeviceState nextState) {
   deviceState = nextState;
   stateStartedMs = millis();
   sendStatus();
+  updateStatusLeds();
 }
 
 bool hasLiquidAvailable() {
@@ -566,6 +617,8 @@ BLYNK_WRITE(V12) {
 void setup() {
   Serial.begin(115200);
   delay(100);
+
+  setupStatusLeds();
 
 #if !USE_MOCK_HARDWARE
   setupHardware();

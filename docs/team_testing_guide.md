@@ -110,6 +110,21 @@ Only move to this phase after the mock and Blynk control tests pass.
 | VL53L1X SDA | `D4` | `PIN_DISTANCE_SDA` |
 | VL53L1X SCL | `D5` | `PIN_DISTANCE_SCL` |
 
+Optional status LEDs are supported but disabled by default. Only enable them after wiring LEDs with resistors to unused pins:
+
+| LED | Board Pin | Firmware Constant |
+| --- | --- | --- |
+| Green / normal | `D6` | `PIN_LED_GREEN` |
+| Orange / low or disabled | `D7` | `PIN_LED_ORANGE` |
+| Red / refill or error | `D8` | `PIN_LED_RED` |
+
+To enable LEDs in real hardware mode, set:
+
+```cpp
+#define USE_MOCK_HARDWARE 0
+#define ENABLE_STATUS_LEDS 1
+```
+
 5. Upload the firmware.
 6. Place a hand between `70 mm` and `150 mm` from the distance sensor.
 7. Expected result:
@@ -117,6 +132,29 @@ Only move to this phase after the mock and Blynk control tests pass.
    - Servo performs one press-and-return cycle.
    - Serial Monitor prints CSV samples with `time_ms,distance_mm,load_raw,liquid_g,remaining_percent,last_dispense_g,state,event`.
    - Blynk metrics update after the accepted cycle.
+
+## Notes on `SmartSan_prototype_simple.ino`
+
+The teammate-provided simplified sketch is useful as a logic reference, but do not upload it as a drop-in replacement for the current repository firmware without changes.
+
+Main mismatches found:
+
+| Area | Simplified sketch | Current project contract |
+| --- | --- | --- |
+| Hand detection | IR sensor on GPIO `2` | VL53L1X distance sensor on `D4`/`D5` |
+| Servo | GPIO `5`, angle `0 -> 60` | `D1`, angle `90 -> 15` |
+| HX711 | GPIO `21`/`22`, uncalibrated relative units | `D2`/`D3`, calibrated empty-bottle zero and grams conversion |
+| Blynk `V2` | Current weight | `remainingPercent` |
+| Blynk `V4` | Bottle status | `deviceState` |
+| Blynk `V5` | Device state | `lastDispenseAt` |
+| Blynk `V7` | Remaining pumps | `liquidWeightGrams` |
+| Credentials | Hardcoded placeholders in the sketch | Local ignored `secrets.h` file |
+
+The current source of truth remains:
+
+```text
+firmware/SmartSanESP32/SmartSanESP32.ino
+```
 
 ## Evidence To Capture
 
