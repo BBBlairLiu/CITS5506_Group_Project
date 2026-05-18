@@ -9,8 +9,8 @@ This checklist focuses on software functionality that can be validated before fu
 | SW-01 | Sensor-triggered dispense | Click `Simulate Sensor Dispense` | State transitions through `HAND_DETECTED` -> `DISPENSING` -> `WAIT_STABILISE` -> `IDLE/REFILL_REQUIRED` |
 | SW-02 | Manual dispense command | Click `Manual Dispense` | One dispense cycle is executed and `usageCount` increments by 1 |
 | SW-03 | Single-cycle safety | Click dispense repeatedly during one running cycle | Only one active cycle runs, buttons remain disabled until cycle ends |
-| SW-04 | Refill alert trigger | Trigger cycles until `remainingPumps` reaches threshold | `Sanitizer Status` changes to `LOW` and state moves to `REFILL_REQUIRED` |
-| SW-05 | Alert reset path | Click `Reset Alert` | `remainingPumps` resets to max and warning returns to `NORMAL` |
+| SW-04 | Refill alert trigger | Reduce mock/real liquid level until `remainingPercent` reaches threshold | `Sanitizer Status` changes to `LOW` and state moves to `REFILL_REQUIRED` |
+| SW-05 | Alert reset path | Click `Reset Alert` after refill or mock reset | Liquid weight/percentage returns to a normal range and warning returns to `NORMAL` |
 
 ## Sync and Failure Handling
 
@@ -33,7 +33,7 @@ This checklist focuses on software functionality that can be validated before fu
 | Test ID | Scenario | Steps | Expected Result |
 | --- | --- | --- | --- |
 | SW-12 | Session summary update | Run 3-5 dispense cycles | `Session Dispenses` increments and `Usage Intensity` updates from LOW to MEDIUM |
-| SW-13 | Rule-based refill risk | Reduce remaining pumps to low values | `Refill Risk` changes from LOW/MEDIUM/HIGH/CRITICAL according to remaining percentage |
+| SW-13 | Rule-based refill risk | Reduce remaining percentage to low values | `Refill Risk` changes from LOW/MEDIUM/HIGH/CRITICAL according to remaining percentage |
 | SW-14 | Operator hint behavior | Toggle sync failure, disable system, and trigger refill required | `Operator Hint` updates to actionable guidance for each state |
 
 ## Evidence to Capture

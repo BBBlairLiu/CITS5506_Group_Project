@@ -6,16 +6,16 @@ This document summarises the software functionalities for the current SmartSan d
 
 The current SmartSan prototype is based on:
 - ESP32 as the main controller
-- IR sensor for hand detection
+- VL53L1X distance sensor for hand detection
 - Servo motor for bottle pressing
-- pump-count estimation for sanitizer level monitoring (HX711 can be added later)
+- HX711 load cell for sanitizer liquid-weight monitoring
 - Blynk dashboard as the primary mobile interface
 - Local browser interface as a mock/demo fallback
 
 The current direction is to:
-- use pump-count as the current level-monitoring method
-- keep weight sensor integration as a future enhancement
-- keep ToF only as a backup option
+- use liquid weight as the current level-monitoring method
+- keep pump-count estimation only as a mock-mode fallback
+- use the distance sensor as the primary automatic trigger
 - focus first on a reliable monitoring workflow instead of advanced analytics
 - use simulated sensor values before hardware arrives so the software flow can be tested early
 
@@ -24,14 +24,14 @@ The current direction is to:
 ## Main Software Functions
 
 ### 1. Hand Detection
-The system continuously reads the IR sensor and decides whether a valid hand-detection event has occurred.
+The system continuously reads the VL53L1X distance sensor and decides whether a valid hand-detection event has occurred.
 
 **Purpose**
 - detect a user hand in the valid sensing range
 - avoid false triggers from small fluctuations
 
 **Input**
-- IR sensor reading
+- corrected distance reading in millimetres
 
 **Output**
 - `handDetected = true/false`
@@ -70,18 +70,19 @@ Each successful dispense is recorded as one valid usage event.
 
 ---
 
-### 4. Remaining Pump Tracking
-The system tracks how many dispense actions are likely left in the current refill cycle.
+### 4. Liquid Weight Tracking
+The system tracks the estimated grams of liquid left in the current refill cycle.
 
 **Purpose**
-- provide a practical remaining-level estimate before full weight-sensor integration
+- provide a practical remaining-level estimate from the calibrated load cell
 
 **Input**
-- successful dispense count
-- configured `MAX_PUMPS` per refill
+- HX711 raw reading
+- empty-bottle zero point
+- calibration factor
 
 **Output**
-- `remainingPumps`
+- `liquidWeightGrams`
 - `remainingPercent`
 
 ---
@@ -103,15 +104,16 @@ The system applies lockout and delay logic to avoid repeated dispensing from one
 ---
 
 ### 6. Sanitizer Level Monitoring
-The remaining pump count is compared with a refill threshold to determine whether the sanitizer level is normal or low.
+The remaining percentage is compared with a refill threshold to determine whether the sanitizer level is normal or low.
 
 **Purpose**
 - monitor remaining sanitizer level
 - support condition-based refill alerts
 
 **Input**
-- `remainingPumps`
-- `refillThresholdPumps`
+- `liquidWeightGrams`
+- `remainingPercent`
+- `refillAlertPercent`
 
 **Output**
 - `sanitizerLow = true/false`
@@ -170,7 +172,7 @@ The browser page shows key monitoring information plus sync health for testing w
 
 **Current Display Fields**
 - usage count
-- remaining pumps
+- liquid weight
 - remaining percentage
 - sanitizer status
 - device state
@@ -184,7 +186,7 @@ The browser page shows key monitoring information plus sync health for testing w
 
 The current minimum viable software flow is:
 
-`IR detects hand -> servo presses bottle -> usage count updates -> remaining count is updated -> refill status is checked -> status is sent by Wi-Fi -> browser page displays result`
+`distance sensor detects hand -> servo presses bottle -> usage count updates -> liquid weight is updated -> refill status is checked -> status is sent by Wi-Fi -> browser page displays result`
 
 ---
 
@@ -194,7 +196,7 @@ The current software priority is:
 1. hand detection
 2. dispensing control
 3. usage event recording
-4. remaining pump tracking
+4. liquid weight tracking
 5. lockout and stabilisation window
 6. sanitizer level monitoring
 7. refill alert logic
@@ -214,7 +216,7 @@ At this stage, the software should not focus too much on:
 - advanced analytics
 - prediction models
 - too many admin-side functions
-- full ToF integration
+- advanced prediction beyond the current distance/weight workflow
 
 These can be considered later after the basic monitoring workflow is stable.
 
@@ -226,7 +228,7 @@ The software for the current SmartSan design is intended to support:
 - automatic hand detection
 - controlled dispensing
 - usage recording
-- pump-count based level monitoring
+- weight-based level monitoring
 - refill warning
 - browser-based monitoring
 

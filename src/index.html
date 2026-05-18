@@ -45,7 +45,7 @@
 
     .content { padding: 24px 28px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 20px; }
 
-    .stat-row { display: grid; grid-template-columns: repeat(5,1fr); gap: 14px; }
+    .stat-row { display: grid; grid-template-columns: repeat(6,1fr); gap: 14px; }
     .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
     .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 10px; font-family: 'DM Mono', monospace; }
     .stat-value { font-size: 32px; font-weight: 600; line-height: 1; font-family: 'DM Mono', monospace; }
@@ -87,7 +87,7 @@
     .feed-tag.info {
       background: rgba(56,189,248,.15);
       color: var(--blue);
-    }    
+    }
     .feed-tag.warn  { background: rgba(251,191,36,.15);  color: var(--yellow); }
     .feed-tag.error { background: rgba(248,113,113,.15); color: var(--red); }
     .feed-tag.ok    { background: rgba(74,222,128,.15);  color: var(--green); }
@@ -134,7 +134,7 @@
       <div class="logo-dot">💧</div>
       <div>
         <div class="logo-text">SmartSan</div>
-        <div class="logo-sub">v0.6 · mock mode</div>
+        <div class="logo-sub">v0.7 · hardware map</div>
       </div>
     </div>
     <div class="nav-section">
@@ -146,7 +146,7 @@
     <div style="flex:1"></div>
     <div style="padding:8px; background:var(--surface2); border-radius:10px; border:1px solid var(--border);">
       <div style="font-size:11px; color:var(--muted); font-family:'DM Mono',monospace; margin-bottom:4px;">ESP32 data contract</div>
-      <div style="font-size:11px; color:var(--muted);">V0 usageCount · V2 remaining%<br>V3 refillAlert · V4 state<br>V7 remainingPumps · V10–V12 ctrl</div>
+      <div style="font-size:11px; color:var(--muted);">V0 usage · V2 remaining% · V3 alert<br>V4 state · V5 lastAt · V6 online<br>V7 weight · V8 distance · V9 dispense</div>
     </div>
   </aside>
 
@@ -170,47 +170,54 @@
           <div class="stat-sub">lifetime dispenses</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Remaining</div>
-          <div class="stat-value good" id="statRemaining">25</div>
-          <div class="stat-sub" id="statRemainingPct">100% full</div>
+          <div class="stat-label">Liquid Weight</div>
+          <div class="stat-value good" id="statWeight">0</div>
+          <div class="stat-sub" id="statWeightSub">g measured by HX711</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Status</div>
+          <div class="stat-label">Bottle Status</div>
+          <div class="stat-value good" id="statBottle">UNKNOWN</div>
+          <div class="stat-sub" id="statBottleSub">FULL / LOW / EMPTY</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Estimated Remaining</div>
+          <div class="stat-value good" id="statRemaining">25</div>
+          <div class="stat-sub" id="statRemainingPct">from V2 remainingPercent</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Refill Alert</div>
           <div class="stat-value good" id="statStatus">NORMAL</div>
           <div class="stat-sub" id="statStatusSub">threshold OK</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Device State</div>
           <div class="stat-value" id="statState" style="font-size:20px">IDLE</div>
-          <div class="stat-sub" id="statStateSub">ready</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Connectivity</div>
-          <div class="stat-value good" id="statOnline">ONLINE</div>
-          <div class="stat-sub" id="statOnlineSub">Blynk connected</div>
+          <div class="stat-sub" id="statStateSub">firmware state</div>
         </div>
       </div>
 
       <div class="main-grid">
         <div class="panel">
-          <div class="panel-title">Refill Prediction</div>
+          <div class="panel-title">Bottle Overview</div>
           <div class="prediction-main">
             <div class="prediction-time" id="predTime">--</div>
-            <div class="prediction-unit" id="predUnit">hrs remaining</div>
+            <div class="prediction-unit" id="predUnit">g measured</div>
           </div>
           <div class="level-bar-wrap">
             <div class="level-bar-track">
-              <div id="levelBarFill" class="level-bar-fill" style="width:40%; background:var(--green)"></div>
+              <div id="levelBarFill" class="level-bar-fill" style="width:100%; background:var(--green)"></div>
             </div>
             <div class="level-label">
-              <span id="levelBarLabel">40% · 10 pumps</span>
-              <span id="levelBarHint" style="color:var(--muted)">est. time-to-empty</span>
+              <span id="levelBarLabel">estimated 100% remaining</span>
+              <span id="levelBarHint" style="color:var(--muted)">prototype estimate</span>
             </div>
           </div>
           <div class="prediction-rows">
-            <div class="pred-row"><span class="pred-label">Avg rate</span><span class="pred-val" id="predRate">-- disp/hr</span></div>
-            <div class="pred-row"><span class="pred-label">Session dispenses</span><span class="pred-val" id="predSession">0</span></div>
-            <div class="pred-row"><span class="pred-label">Refill risk</span><span class="pred-val" id="predRisk">LOW</span></div>
+            <div class="pred-row"><span class="pred-label">Bottle status</span><span class="pred-val" id="predBottle">UNKNOWN</span></div>
+            <div class="pred-row"><span class="pred-label">Estimated remaining</span><span class="pred-val" id="predRemaining">25 pumps</span></div>
+            <div class="pred-row"><span class="pred-label">Distance</span><span class="pred-val" id="predDistance">-- mm</span></div>
+            <div class="pred-row"><span class="pred-label">Last dispense amount</span><span class="pred-val" id="predLastDispense">-- g</span></div>
+            <div class="pred-row"><span class="pred-label">Refill alert</span><span class="pred-val" id="predRisk">NORMAL</span></div>
             <div class="pred-row"><span class="pred-label">Operator hint</span><span class="pred-val" id="predHint">No action needed</span></div>
           </div>
         </div>
@@ -251,7 +258,7 @@
             <div class="health-row"><div class="health-label">State Machine</div><div id="hStateMachine" class="health-val good">RUNNING</div></div>
             <div class="health-row"><div class="health-label">Dispense Lock</div><div id="hDispenseLock" class="health-val good">FREE</div></div>
             <div class="health-row"><div class="health-label">Lockout</div><div id="hLockout" class="health-val">CLEAR</div></div>
-            <div class="health-row"><div class="health-label">Last Dispense</div><div id="hLastDispense" class="health-val">--</div></div>
+            <div class="health-row"><div class="health-label">Last Dispense At</div><div id="hLastDispense" class="health-val">--</div></div>
             <div class="health-row"><div class="health-label">Uptime</div><div id="hUptime" class="health-val">--</div></div>
           </div>
         </div>
@@ -279,13 +286,20 @@ const device = {
   sessionCount:       0,
   remainingPumps:     25,
   maxPumps:           25,
+  remainingPercent:   100,
   refillAlert:        false,
+  currentWeight:      600,
+  distanceMm:         0,
+  lastDispenseGrams:  0,
+  bottleStatus:       'FULL',
+  deviceState:        'IDLE',
   systemEnabled:      true,
   dispenseInProgress: false,
   lastDispenseAt:     null,
   sessionStart:       new Date().toLocaleTimeString(),
   refillCount:        0,
   errorCount:         0,
+  deviceOnline:       true,
   online:             true,
   syncFail:           false,
   // fix #3: buckets store { count, ts } — labels anchored to real timestamps
@@ -293,6 +307,27 @@ const device = {
   events:             [],
   startMs:            Date.now(),
 };
+
+const FULL_LIQUID_GRAMS = 600;
+const MAX_LIQUID_DISPLAY_GRAMS = 700;
+const REFILL_ALERT_PERCENT = 10;
+
+const BLYNK_TOKEN = ''; // Leave empty in git; fill locally only for private Blynk API polling.
+const BLYNK_API_BASE = 'https://blynk.cloud/external/api/get?token=';
+const BLYNK_LIVE_POLL_MS = 2000;
+const LIVE_BLYNK_ENABLED = Boolean(BLYNK_TOKEN);
+const BLYNK_PINS = Object.freeze({
+  usageCount: 0,
+  remainingPercent: 2,
+  refillAlert: 3,
+  deviceState: 4,
+  lastDispenseAt: 5,
+  deviceOnline: 6,
+  liquidWeightGrams: 7,
+  distanceMm: 8,
+  lastDispenseGrams: 9,
+  systemEnabled: 12,
+});
 
 // ─────────────────────────────────────────────────────────────
 // SIM — animation timeline only, no logic authority
@@ -303,10 +338,11 @@ const sim = { phase: 'idle' };
 // UI STATE — pure derivation, no mapping layer
 // ─────────────────────────────────────────────────────────────
 function uiState() {
+  if (!device.deviceOnline)       return 'OFFLINE';
   if (!device.systemEnabled)     return 'DISABLED';
+  if (device.refillAlert || device.remainingPercent <= REFILL_ALERT_PERCENT) return 'REFILL_REQUIRED';
   if (device.dispenseInProgress) return 'DISPENSING';
-  if (device.refillAlert)        return 'REFILL_REQUIRED';
-  return 'IDLE';
+  return device.deviceState || 'IDLE';
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -316,28 +352,99 @@ const CONFIG = {
   PREDICTION_BUCKETS: 3
 };
 
+function clampNumber(value, min, max) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) return min;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function bottleStatusFromPercent(percent) {
+  if (percent <= 0) return 'EMPTY';
+  if (percent <= REFILL_ALERT_PERCENT) return 'LOW';
+  if (percent >= 90) return 'FULL';
+  return 'IN_USE';
+}
+
 function getPrediction() {
-  const pct  = Math.round((device.remainingPumps / device.maxPumps) * 100);
-  const recentBuckets = device.usageHistory.slice(-CONFIG.PREDICTION_BUCKETS);
-  const recentDispenses = recentBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
-  const minutesTracked = (recentBuckets.length * 30000) / 60000;
-  const ratePerHour = minutesTracked > 0 ? (recentDispenses / minutesTracked) * 60 : null;
-  let timeStr = '--', unit = 'not enough data yet';
-  if (ratePerHour && ratePerHour > 0) {
-    const minsLeft = (device.remainingPumps / ratePerHour) * 60;
-    if (minsLeft < 60) { timeStr = Math.round(minsLeft); unit = 'min remaining'; }
-    else               { timeStr = (minsLeft / 60).toFixed(1); unit = 'hrs remaining'; }
-  }
-  if (!ratePerHour || ratePerHour <= 0) {
-    unit = 'not enough recent data yet';
-  }
-  const risk = pct <= 0 ? 'CRITICAL' : pct <= 16 ? 'HIGH' : pct <= 40 ? 'MEDIUM' : 'LOW';
+  const pct = Math.round(clampNumber(device.remainingPercent, 0, 100));
+  const remaining = Math.round((pct / 100) * device.maxPumps);
+  const bottle = bottleStatusFromPercent(pct);
+  const alert = device.refillAlert || pct <= REFILL_ALERT_PERCENT;
   const hint = !device.systemEnabled ? 'Enable system to allow dispensing'
-             : !device.online        ? 'Check Wi-Fi/Blynk connectivity'
-             : risk === 'CRITICAL'   ? 'Refill required — press reset after refilling'
-             : risk === 'HIGH'       ? 'Prepare refill soon'
+             : alert    ? 'Refill required — press reset after refilling'
+             : bottle === 'EMPTY' ? 'Bottle empty by weight'
+             : bottle === 'LOW'    ? 'Bottle getting low'
              : 'No action needed';
-  return { timeStr, unit, rate: ratePerHour ? ratePerHour.toFixed(1) : '--', risk, hint, pct };
+  const risk = alert ? 'CRITICAL' : bottle === 'EMPTY' ? 'HIGH' : bottle === 'LOW' ? 'MEDIUM' : 'LOW';
+  return {
+    weight: device.currentWeight,
+    bottle,
+    remaining,
+    pct,
+    risk,
+    hint,
+  };
+}
+
+async function fetchBlynkValue(vPin) {
+  const response = await fetch(`${BLYNK_API_BASE}${BLYNK_TOKEN}&V${vPin}`);
+  if (!response.ok) {
+    throw new Error(`Blynk fetch failed for V${vPin}`);
+  }
+  return response.text();
+}
+
+async function syncFromBlynk() {
+  if (!LIVE_BLYNK_ENABLED) {
+    return;
+  }
+
+  try {
+    const [
+      usageCount,
+      remainingPercent,
+      refillAlert,
+      deviceState,
+      lastDispenseAt,
+      deviceOnline,
+      liquidWeightGrams,
+      distanceMm,
+      lastDispenseGrams,
+      systemEnabled,
+    ] = await Promise.all([
+      fetchBlynkValue(BLYNK_PINS.usageCount),
+      fetchBlynkValue(BLYNK_PINS.remainingPercent),
+      fetchBlynkValue(BLYNK_PINS.refillAlert),
+      fetchBlynkValue(BLYNK_PINS.deviceState),
+      fetchBlynkValue(BLYNK_PINS.lastDispenseAt),
+      fetchBlynkValue(BLYNK_PINS.deviceOnline),
+      fetchBlynkValue(BLYNK_PINS.liquidWeightGrams),
+      fetchBlynkValue(BLYNK_PINS.distanceMm),
+      fetchBlynkValue(BLYNK_PINS.lastDispenseGrams),
+      fetchBlynkValue(BLYNK_PINS.systemEnabled),
+    ]);
+
+    device.usageCount = Number.parseInt(usageCount, 10) || 0;
+    device.sessionCount = device.usageCount;
+    device.remainingPercent = clampNumber(remainingPercent, 0, 100);
+    device.remainingPumps = Math.round((device.remainingPercent / 100) * device.maxPumps);
+    device.currentWeight = clampNumber(liquidWeightGrams, 0, MAX_LIQUID_DISPLAY_GRAMS);
+    device.refillAlert = refillAlert.trim() === '1';
+    device.deviceState = deviceState.trim() || 'IDLE';
+    device.lastDispenseAt = lastDispenseAt.trim() || null;
+    device.deviceOnline = deviceOnline.trim() === '1';
+    device.distanceMm = Number.parseInt(distanceMm, 10) || 0;
+    device.lastDispenseGrams = Number.parseFloat(lastDispenseGrams) || 0;
+    if (systemEnabled.trim() !== '') {
+      device.systemEnabled = systemEnabled.trim() !== '0';
+    }
+    device.bottleStatus = bottleStatusFromPercent(device.remainingPercent);
+    device.online = true;
+    render();
+  } catch (error) {
+    device.online = false;
+    console.warn('Blynk sync failed, keeping local mock data:', error);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -419,43 +526,50 @@ function render() {
   const pct   = pred.pct;
 
   document.getElementById('statUsage').textContent = device.usageCount;
+  const weightEl = document.getElementById('statWeight');
+  weightEl.textContent = `${pred.weight.toFixed(0)} g`;
+  weightEl.className = 'stat-value ' + (pred.bottle === 'EMPTY' ? 'bad' : pred.bottle === 'LOW' ? 'warn' : 'good');
+  document.getElementById('statWeightSub').textContent = 'HX711 reading (prototype mode)';
+
+  const bottleEl = document.getElementById('statBottle');
+  bottleEl.textContent = pred.bottle;
+  bottleEl.className = 'stat-value ' + (pred.bottle === 'EMPTY' ? 'bad' : pred.bottle === 'LOW' ? 'warn' : 'good');
+  document.getElementById('statBottleSub').textContent = 'FULL / IN_USE / LOW / EMPTY';
+
   const remEl = document.getElementById('statRemaining');
-  remEl.textContent = device.remainingPumps;
+  remEl.textContent = pred.remaining;
   remEl.className = 'stat-value ' + (pct <= 16 ? 'bad' : pct <= 40 ? 'warn' : 'good');
-  document.getElementById('statRemainingPct').textContent = `${pct}% full`;
+  document.getElementById('statRemainingPct').textContent = `${pct}% from V2 remainingPercent`;
 
   const statusEl = document.getElementById('statStatus');
-  statusEl.textContent = device.refillAlert ? 'LOW' : 'NORMAL';
-  statusEl.className = 'stat-value ' + (device.refillAlert ? 'bad' : 'good');
-  document.getElementById('statStatusSub').textContent = device.refillAlert ? 'refill required' : 'threshold OK';
+  const alert = device.refillAlert || pct <= REFILL_ALERT_PERCENT;
+  statusEl.textContent = alert ? 'REFILL' : 'NORMAL';
+  statusEl.className = 'stat-value ' + (alert ? 'bad' : 'good');
+  document.getElementById('statStatusSub').textContent = alert ? 'refill required' : 'threshold OK';
 
   const stEl = document.getElementById('statState');
   stEl.textContent = state;
-  stEl.className = 'stat-value' + (state === 'DISPENSING' ? ' warn' : state === 'REFILL_REQUIRED' ? ' bad' : '');
-  document.getElementById('statStateSub').textContent = device.systemEnabled ? 'enabled' : 'disabled';
-
-  const onEl = document.getElementById('statOnline');
-  onEl.textContent = device.online ? 'ONLINE' : 'OFFLINE';
-  onEl.className = 'stat-value ' + (device.online ? 'good' : 'bad');
-  document.getElementById('statOnlineSub').textContent = device.online ? 'Blynk connected' : 'connection lost';
+  stEl.className = 'stat-value' + (state === 'DISPENSING' || state === 'OFFLINE' ? ' warn' : state === 'REFILL_REQUIRED' ? ' bad' : '');
+  document.getElementById('statStateSub').textContent = !device.deviceOnline ? 'offline' : device.systemEnabled ? 'enabled' : 'disabled';
 
   document.getElementById('topbarSub').textContent =
-    `state: ${state.toLowerCase()} · ${device.remainingPumps}/${device.maxPumps} pumps · ${device.online ? 'online' : 'offline'}`;
+    `state: ${state.toLowerCase()} · ${pred.weight.toFixed(0)} g · ${pct}% · ${device.deviceOnline ? 'online' : 'offline'}`;
 
-  document.getElementById('predTime').textContent    = pred.timeStr;
-  document.getElementById('predUnit').textContent    = pred.unit;
-  document.getElementById('predRate').textContent =
-    pred.rate !== '--' ? `${pred.rate} disp/hr` : '--';
-  document.getElementById('predSession').textContent = device.sessionCount;
+  document.getElementById('predTime').textContent    = `${pred.weight.toFixed(0)}`;
+  document.getElementById('predUnit').textContent    = 'g measured';
+  document.getElementById('predBottle').textContent  = pred.bottle;
+  document.getElementById('predRemaining').textContent = `${pred.remaining} pumps`;
+  document.getElementById('predDistance').textContent = `${device.distanceMm} mm`;
+  document.getElementById('predLastDispense').textContent = `${device.lastDispenseGrams.toFixed(1)} g`;
   const riskEl = document.getElementById('predRisk');
   riskEl.textContent = pred.risk;
-  riskEl.style.color = pred.risk === 'CRITICAL' ? 'var(--red)' : pred.risk === 'HIGH' ? 'var(--yellow)' : 'var(--green)';
+  riskEl.style.color = pred.risk === 'CRITICAL' ? 'var(--red)' : (pred.risk === 'HIGH' || pred.risk === 'MEDIUM') ? 'var(--yellow)' : 'var(--green)';
   document.getElementById('predHint').textContent = pred.hint;
 
   const barFill = document.getElementById('levelBarFill');
   barFill.style.width = pct + '%';
   barFill.style.background = pct <= 16 ? 'var(--red)' : pct <= 40 ? 'var(--yellow)' : 'var(--green)';
-  document.getElementById('levelBarLabel').textContent = `${pct}% · ${device.remainingPumps} pumps`;
+  document.getElementById('levelBarLabel').textContent = `${pct}% estimated remaining · ${pred.remaining} pumps`;
 
   drawChart(device.usageHistory);
   // fix #3: labels from stored bucket timestamps, not computed from now
@@ -469,8 +583,8 @@ function render() {
 
   renderFeed();
 
-  document.getElementById('hStateMachine').textContent = device.systemEnabled ? 'RUNNING' : 'HALTED';
-  document.getElementById('hStateMachine').className   = 'health-val ' + (device.systemEnabled ? 'good' : 'warn');
+  document.getElementById('hStateMachine').textContent = !device.deviceOnline ? 'OFFLINE' : device.systemEnabled ? 'RUNNING' : 'HALTED';
+  document.getElementById('hStateMachine').className   = 'health-val ' + (!device.deviceOnline || !device.systemEnabled ? 'warn' : 'good');
   document.getElementById('hDispenseLock').textContent = device.dispenseInProgress ? 'LOCKED' : 'FREE';
   document.getElementById('hDispenseLock').className   = 'health-val ' + (device.dispenseInProgress ? 'warn' : 'good');
   document.getElementById('hLockout').textContent      = device.dispenseInProgress ? 'ACTIVE' : 'CLEAR';
@@ -499,8 +613,10 @@ function render() {
 // DISPENSE — fix #4: history bucket always in sync with sessionCount
 // ─────────────────────────────────────────────────────────────
 function doDispense(source) {
-  if (!device.systemEnabled || device.dispenseInProgress || device.remainingPumps <= 0) return;
+  if (!device.systemEnabled || device.dispenseInProgress || device.remainingPercent <= 0) return;
   device.dispenseInProgress = true;
+  device.deviceState = 'DISPENSE';
+  device.deviceOnline = true;
   sim.phase = 'triggered';
   recordEvent('info', `${source === 'manual' ? 'Manual' : 'Sensor'} dispense triggered`);
   render();
@@ -509,7 +625,11 @@ function doDispense(source) {
     sim.phase = 'settling';
     device.usageCount++;
     device.sessionCount++;
-    device.remainingPumps = Math.max(0, device.remainingPumps - 1);
+    device.lastDispenseGrams = FULL_LIQUID_GRAMS / device.maxPumps;
+    device.currentWeight = Math.max(0, device.currentWeight - device.lastDispenseGrams);
+    device.remainingPercent = Math.round((device.currentWeight / FULL_LIQUID_GRAMS) * 100);
+    device.remainingPumps = Math.round((device.remainingPercent / 100) * device.maxPumps);
+    device.bottleStatus = bottleStatusFromPercent(device.remainingPercent);
     device.lastDispenseAt = new Date().toLocaleTimeString();
     device.usageHistory[device.usageHistory.length - 1].count++;
     render();
@@ -517,13 +637,15 @@ function doDispense(source) {
   setTimeout(() => {
     sim.phase = 'done';
     device.dispenseInProgress = false;
-    device.refillAlert = device.remainingPumps <= 0;
+    device.deviceState = 'COOLDOWN';
+    device.refillAlert = device.remainingPercent <= REFILL_ALERT_PERCENT;
     if (device.refillAlert) {
       recordEvent('warn', 'Refill alert — bottle empty');
       toast('Refill required — bottle empty', 'warn');
     } else {
       recordEvent('ok', 'Dispense complete');
     }
+    setTimeout(() => { device.deviceState = 'IDLE'; render(); }, 2000);
     render();
   }, 2400);
 }
@@ -537,6 +659,10 @@ document.getElementById('btnManual').addEventListener('click', () => doDispense(
 document.getElementById('btnReset').addEventListener('click', () => {
   device.remainingPumps = device.maxPumps;
   device.refillAlert = false; device.sessionCount = 0; device.refillCount++;
+  device.remainingPercent = 100;
+  device.bottleStatus = 'FULL';
+  device.currentWeight = FULL_LIQUID_GRAMS;
+  device.lastDispenseGrams = 0;
   recordEvent('ok', 'Refill confirmed — alert reset');
   toast('Alert reset — bottle refilled', 'ok');
   render();
@@ -544,8 +670,10 @@ document.getElementById('btnReset').addEventListener('click', () => {
 
 document.getElementById('btnFullReset').addEventListener('click', () => {
   Object.assign(device, {
-    usageCount: 0, sessionCount: 0, remainingPumps: device.maxPumps,
-    refillAlert: false, systemEnabled: true, online: true, syncFail: false,
+    usageCount: 0, sessionCount: 0, remainingPumps: device.maxPumps, remainingPercent: 100,
+    refillAlert: false, systemEnabled: true, deviceOnline: true, online: true, syncFail: false,
+    currentWeight: FULL_LIQUID_GRAMS, distanceMm: 0, lastDispenseGrams: 0,
+    bottleStatus: 'FULL', deviceState: 'IDLE',
     dispenseInProgress: false, lastDispenseAt: null, refillCount: 0, errorCount: 0,
     events: [], usageHistory: Array.from({ length: 12 }, () => ({ count: 0, ts: Date.now() })),
     startMs: Date.now(), sessionStart: new Date().toLocaleTimeString(),
@@ -562,7 +690,9 @@ document.getElementById('toggleEnabled').addEventListener('change', e => {
 });
 
 document.getElementById('toggleSyncFail').addEventListener('change', e => {
-  device.syncFail = e.target.checked; device.online = !device.syncFail;
+  device.syncFail = e.target.checked;
+  device.online = !device.syncFail;
+  if (!LIVE_BLYNK_ENABLED) device.deviceOnline = !device.syncFail;
   recordEvent(device.syncFail ? 'error' : 'ok', device.syncFail ? 'Sync failure simulated' : 'Sync restored');
   if (device.syncFail) toast('Sync failure simulated', 'error');
   render();
@@ -574,7 +704,12 @@ document.getElementById('toggleSyncFail').addEventListener('change', e => {
 setInterval(() => { document.getElementById('clockPill').textContent = new Date().toLocaleTimeString(); }, 1000);
 // fix #3: new bucket gets a real timestamp on creation
 setInterval(() => { device.usageHistory.shift(); device.usageHistory.push({ count: 0, ts: Date.now() }); render(); }, 30000);
-setInterval(() => { device.online = !device.syncFail; render(); }, 5000);
+setInterval(() => {
+  device.online = !device.syncFail;
+  if (!LIVE_BLYNK_ENABLED) device.deviceOnline = !device.syncFail;
+  render();
+}, 5000);
+setInterval(syncFromBlynk, BLYNK_LIVE_POLL_MS);
 
 // fix #2: defer first render until after layout paint so canvas has real width
 requestAnimationFrame(render);

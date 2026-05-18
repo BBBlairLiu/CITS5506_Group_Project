@@ -1,11 +1,9 @@
 /*
-  SmartSan ESP32 firmware skeleton.
+  SmartSan ESP32 firmware.
 
-  This sketch uses simulated IR and servo behaviour so the Blynk dashboard and state
-  machine can be tested early. Weight sensing (HX711) is planned but currently
-  replaced with pump-count logic for the prototype.
-  Set USE_MOCK_HARDWARE to 0 when the real sensors
-  are ready and replace the hardware adapter functions near the bottom.
+  Mock mode keeps the original Serial Monitor test path. Real hardware mode uses
+  the hardware group's VL53L1X distance sensor, HX711 load cell, servo logic,
+  and optional status LEDs.
 */
 
 // Blynk configuration
@@ -23,37 +21,58 @@ const char WIFI_SSID[] = "REPLACE_WITH_WIFI_NAME";
 const char WIFI_PASS[] = "REPLACE_WITH_WIFI_PASSWORD";
 #endif
 
-// IR sensor configuration - adjust as needed for the actual sensor and placement
-#define PIN_IR_SENSOR     2
-#define IR_ACTIVE_LOW     true
-#define IR_DEBOUNCE_MS    80
+// Set to 0 after the hardware wiring and Arduino libraries are ready.
+#define USE_MOCK_HARDWARE 1
 
-// Servo configuration - adjust pin and angles as needed for the actual mechanism
-#define PIN_SERVO         5
-
-#define USE_MOCK_HARDWARE 1 // Set to 0 to use real hardware when ready
-
-// Hardware libraries (servo only used when not in mock mode)
-#if !USE_MOCK_HARDWARE // Only include servo library if not using mock hardware, to avoid unnecessary dependencies during early testing
-#include <ESP32Servo.h>
-#endif
+// Optional: set to 1 only after wiring LEDs to the status LED pins below.
+#define ENABLE_STATUS_LEDS 0
 
 #include <WiFi.h>
 #include <BlynkSimpleEsp32.h>
 
-//ir sensor variables for debounce logic and stable state detection
-static bool _irLastState = false;
-static bool _irStableState = false;
-static unsigned long _irLastChangeMs = 0;
-static bool _dispensingActive = false;  // prevents overlapping dispense cycles
-static bool _irEventConsumed = true;
+#if !USE_MOCK_HARDWARE
+#include <Wire.h>
+#include <VL53L1X.h>
+#include <ESP32Servo.h>
+#include "HX711.h"
+#endif
 
-// Servo timing and angles - adjust as needed for the actual mechanism
-const int SERVO_HOME_DEG  = 0;
-const int SERVO_PRESS_DEG = 60;
-const int SERVO_PRESS_MS  = 400;
-const int SERVO_RETURN_MS = 300;
-const int SERVO_SETTLE_MS = 100;
+// Hardware pin map from project_iot_adjustment.ino.
+// D pin labels are used by the selected XIAO ESP32 board package in Arduino IDE.
+#if !USE_MOCK_HARDWARE
+const int PIN_SERVO = D1;
+const int PIN_LOADCELL_DOUT = D2;
+const int PIN_LOADCELL_SCK = D3;
+const int PIN_DISTANCE_SDA = D4;
+const int PIN_DISTANCE_SCL = D5;
+#endif
+
+#if !USE_MOCK_HARDWARE && ENABLE_STATUS_LEDS
+// Optional status LEDs. Keep D1-D5 reserved for servo, HX711, and VL53L1X.
+const int PIN_LED_GREEN = D6;
+const int PIN_LED_ORANGE = D7;
+const int PIN_LED_RED = D8;
+#endif
+
+// Distance trigger settings
+const int MIN_HAND_DISTANCE_MM = 70;
+const int MAX_HAND_DISTANCE_MM = 150;
+const int DISTANCE_OFFSET_MM = 5;
+
+// Servo settings from the hardware integration sketch
+const int SERVO_HOME_DEG = 90;
+const int SERVO_PRESS_DEG = 15;
+const int SERVO_STEP_DELAY_MS = 35;
+const int SERVO_HOLD_MS = 700;
+const int SERVO_RETURN_SETTLE_MS = 1000;
+
+// HX711 load cell calibration from the hardware group.
+// Empty bottle is treated as 0 g liquid weight.
+const long LOADCELL_ZERO_RAW = 1045992;
+const float LOADCELL_CALIBRATION_FACTOR = 2153.3;
+const float FULL_LIQUID_GRAMS = 600.0;
+const float EMPTY_NOISE_GRAMS = 5.0;
+const int REFILL_ALERT_PERCENT = 10;
 
 // Blynk virtual pin definitions
 const int PIN_USAGE_COUNT = V0;
@@ -62,22 +81,23 @@ const int PIN_REFILL_ALERT = V3;
 const int PIN_DEVICE_STATE = V4;
 const int PIN_LAST_DISPENSE_AT = V5;
 const int PIN_DEVICE_ONLINE = V6;
-const int PIN_REMAINING_PUMPS = V7; // NEW: raw remaining pumps for debugging, replaced current weight reading pin
+const int PIN_LIQUID_WEIGHT_GRAMS = V7;
+const int PIN_DISTANCE_MM = V8;
+const int PIN_LAST_DISPENSE_GRAMS = V9;
 const int PIN_MANUAL_DISPENSE = V10;
 const int PIN_RESET_ALERT = V11;
 const int PIN_SYSTEM_ENABLED = V12;
 
 // Device and state machine variables
-const int MAX_PUMPS = 25; // TODO: calibrate by counting full bottle dispenses
+const int MAX_PUMPS = 25;
 const unsigned long DISPENSE_LOCKOUT_MS = 2000;
 const unsigned long STABILISE_DELAY_MS = 1200;
 const unsigned long STATUS_INTERVAL_MS = 5000;
-const unsigned long STABILISE_TIMEOUT_MS = 5000; // watchdog timeout for dispense cycle
-const unsigned long ERROR_RECOVERY_MS = 8000; // Time to wait in error state before allowing reset, can be adjusted based on expected recovery time or user intervention needs
+const unsigned long MEASUREMENT_INTERVAL_MS = 500;
+const unsigned long BLYNK_RECONNECT_INTERVAL_MS = 10000;
+const unsigned long STABILISE_TIMEOUT_MS = 5000;
+const unsigned long ERROR_RECOVERY_MS = 8000;
 
-unsigned long lastErrorLogMs = 0; // For rate-limiting error logs to avoid spamming during error conditions
-
-// State machine states
 enum DeviceState {
   STATE_IDLE,
   STATE_HAND_DETECTED,
@@ -90,22 +110,42 @@ enum DeviceState {
   STATE_ERROR
 };
 
-// Global variables
 DeviceState deviceState = STATE_IDLE;
 
 #if !USE_MOCK_HARDWARE
-Servo dispenserServo; // Servo object for controlling the dispenser mechanism
+VL53L1X distanceSensor;
+Servo dispenserServo;
+HX711 scale;
 #endif
+
 int usageCount = 0;
 int sessionCount = 0;
-int remainingPumps = MAX_PUMPS;
+int remainingPumpsEstimate = MAX_PUMPS;
+int remainingPercent = 100;
 bool refillAlert = false;
 bool systemEnabled = true;
 bool manualDispenseRequested = false;
 bool resetAlertRequested = false;
+bool dispensingActive = false;
+bool handPresent = false;
+bool distanceSensorReady = false;
+bool scaleReady = false;
+
+long loadCellRaw = 0;
+float liquidWeightGrams = FULL_LIQUID_GRAMS;
+float previousLiquidWeightGrams = FULL_LIQUID_GRAMS;
+float lastDispenseGrams = 0.0;
+int distanceRawMm = 0;
+int distanceMm = 0;
+
 unsigned long lastDispenseMs = 0;
 unsigned long stateStartedMs = 0;
 unsigned long lastStatusMs = 0;
+unsigned long lastMeasurementMs = 0;
+unsigned long lastErrorLogMs = 0;
+unsigned long lastBlynkReconnectMs = 0;
+
+bool csvHeaderPrinted = false;
 
 String stateToString(DeviceState state) {
   switch (state) {
@@ -128,35 +168,270 @@ String stateToString(DeviceState state) {
     case STATE_ERROR:
       return "ERROR";
     default:
-      Serial.println("[WARN] Unknown DeviceState encountered");
       return "UNKNOWN_STATE";
   }
 }
 
-void setState(DeviceState nextState) {
-  deviceState = nextState;
-  stateStartedMs = millis();
-  sendStatus();
+float clampFloat(float value, float lower, float upper) {
+  if (value < lower) {
+    return lower;
+  }
+
+  if (value > upper) {
+    return upper;
+  }
+
+  return value;
 }
 
-void sendStatus() { //updating logic with pump count instead of weight
-  int remainingPercent = (remainingPumps * 100) / MAX_PUMPS;
-  remainingPercent = constrain(remainingPercent, 0, 100);
+void updateRemainingMetrics() {
+  float percent = (liquidWeightGrams / FULL_LIQUID_GRAMS) * 100.0;
+  remainingPercent = (int)(clampFloat(percent, 0.0, 100.0) + 0.5);
+
+  float pumpEstimate = (remainingPercent / 100.0) * MAX_PUMPS;
+  remainingPumpsEstimate = (int)(clampFloat(pumpEstimate, 0.0, MAX_PUMPS) + 0.5);
+}
+
+void updateRefillAlert() {
+  refillAlert = remainingPercent <= REFILL_ALERT_PERCENT;
+}
+
+void setupStatusLeds() {
+#if !USE_MOCK_HARDWARE && ENABLE_STATUS_LEDS
+  pinMode(PIN_LED_GREEN, OUTPUT);
+  pinMode(PIN_LED_ORANGE, OUTPUT);
+  pinMode(PIN_LED_RED, OUTPUT);
+
+  digitalWrite(PIN_LED_GREEN, LOW);
+  digitalWrite(PIN_LED_ORANGE, LOW);
+  digitalWrite(PIN_LED_RED, LOW);
+#endif
+}
+
+void setStatusLeds(bool greenOn, bool orangeOn, bool redOn) {
+#if !USE_MOCK_HARDWARE && ENABLE_STATUS_LEDS
+  digitalWrite(PIN_LED_GREEN, greenOn ? HIGH : LOW);
+  digitalWrite(PIN_LED_ORANGE, orangeOn ? HIGH : LOW);
+  digitalWrite(PIN_LED_RED, redOn ? HIGH : LOW);
+#else
+  (void)greenOn;
+  (void)orangeOn;
+  (void)redOn;
+#endif
+}
+
+void updateStatusLeds() {
+  if (deviceState == STATE_ERROR) {
+    setStatusLeds(false, false, true);
+  } else if (!systemEnabled || deviceState == STATE_DISABLED) {
+    setStatusLeds(false, true, false);
+  } else if (refillAlert) {
+    setStatusLeds(false, false, true);
+  } else if (remainingPercent <= 40) {
+    setStatusLeds(false, true, false);
+  } else {
+    setStatusLeds(true, false, false);
+  }
+}
+
+void printCsvHeaderOnce() {
+  if (csvHeaderPrinted) {
+    return;
+  }
+
+  Serial.println("time_ms,distance_mm,load_raw,liquid_g,remaining_percent,last_dispense_g,state,event");
+  csvHeaderPrinted = true;
+}
+
+void printCsvSample(const char* eventName) {
+  printCsvHeaderOnce();
+  Serial.print(millis());
+  Serial.print(",");
+  Serial.print(distanceMm);
+  Serial.print(",");
+  Serial.print(loadCellRaw);
+  Serial.print(",");
+  Serial.print(liquidWeightGrams, 1);
+  Serial.print(",");
+  Serial.print(remainingPercent);
+  Serial.print(",");
+  Serial.print(lastDispenseGrams, 1);
+  Serial.print(",");
+  Serial.print(stateToString(deviceState));
+  Serial.print(",");
+  Serial.println(eventName);
+}
+
+void connectBlynk() {
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Blynk.config(BLYNK_AUTH_TOKEN);
+
+  Serial.print("[WIFI] Connecting to ");
+  Serial.println(WIFI_SSID);
+
+  if (Blynk.connect(5000)) {
+    Serial.println("[BLYNK] Connected");
+  } else {
+    Serial.println("[BLYNK] Not connected yet; local Serial testing will continue");
+  }
+}
+
+void runBlynkConnection() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  if (!Blynk.connected() && millis() - lastBlynkReconnectMs >= BLYNK_RECONNECT_INTERVAL_MS) {
+    lastBlynkReconnectMs = millis();
+    Blynk.connect(1000);
+  }
+
+  if (Blynk.connected()) {
+    Blynk.run();
+  }
+}
+
+#if !USE_MOCK_HARDWARE
+void setupHardware() {
+  Wire.begin(PIN_DISTANCE_SDA, PIN_DISTANCE_SCL);
+
+  distanceSensor.setTimeout(500);
+  if (!distanceSensor.init()) {
+    Serial.println("[ERROR] Distance sensor failed");
+    deviceState = STATE_ERROR;
+  } else {
+    distanceSensor.startContinuous(50);
+    distanceSensorReady = true;
+    Serial.println("[HW] Distance sensor started");
+  }
+
+  dispenserServo.attach(PIN_SERVO);
+  dispenserServo.write(SERVO_HOME_DEG);
+  delay(500);
+  Serial.println("[HW] Servo ready");
+
+  scale.begin(PIN_LOADCELL_DOUT, PIN_LOADCELL_SCK);
+  if (!scale.is_ready()) {
+    Serial.println("[ERROR] HX711 not found. Check DT/SCK wiring.");
+    deviceState = STATE_ERROR;
+  } else {
+    scaleReady = true;
+    Serial.println("[HW] HX711 ready");
+  }
+}
+
+bool readDistanceMeasurement() {
+  if (!distanceSensorReady) {
+    return false;
+  }
+
+  distanceRawMm = distanceSensor.read();
+
+  if (distanceSensor.timeoutOccurred()) {
+    Serial.println("[WARN] Distance sensor timeout");
+    return false;
+  }
+
+  distanceMm = distanceRawMm - DISTANCE_OFFSET_MM;
+  if (distanceMm < 0) {
+    distanceMm = 0;
+  }
+
+  return true;
+}
+
+bool readWeightMeasurement() {
+  if (!scaleReady) {
+    return false;
+  }
+
+  if (!scale.is_ready()) {
+    Serial.println("[WARN] HX711 not ready");
+    scaleReady = false;
+    return false;
+  }
+
+  loadCellRaw = scale.read_average(10);
+  liquidWeightGrams = (loadCellRaw - LOADCELL_ZERO_RAW) / LOADCELL_CALIBRATION_FACTOR;
+
+  if (liquidWeightGrams > -EMPTY_NOISE_GRAMS && liquidWeightGrams < EMPTY_NOISE_GRAMS) {
+    liquidWeightGrams = 0.0;
+  }
+
+  if (liquidWeightGrams < 0.0) {
+    liquidWeightGrams = 0.0;
+  }
+
+  return true;
+}
+#endif
+
+void sampleMeasurements(const char* eventName) {
+#if USE_MOCK_HARDWARE
+  liquidWeightGrams = (remainingPumpsEstimate * FULL_LIQUID_GRAMS) / MAX_PUMPS;
+  loadCellRaw = 0;
+  distanceRawMm = 0;
+  distanceMm = 0;
+#else
+  readDistanceMeasurement();
+  readWeightMeasurement();
+#endif
+
+  updateRemainingMetrics();
+  updateRefillAlert();
+  updateStatusLeds();
+  printCsvSample(eventName);
+}
+
+void sampleMeasurementsIfDue() {
+  if (millis() - lastMeasurementMs < MEASUREMENT_INTERVAL_MS) {
+    return;
+  }
+
+  lastMeasurementMs = millis();
+  sampleMeasurements("sample");
+}
+
+void sendStatus() {
+  updateRemainingMetrics();
+  updateRefillAlert();
+
+  if (!Blynk.connected()) {
+    return;
+  }
 
   Blynk.virtualWrite(PIN_USAGE_COUNT, usageCount);
   Blynk.virtualWrite(PIN_REMAINING_PERCENT, remainingPercent);
   Blynk.virtualWrite(PIN_REFILL_ALERT, refillAlert ? 1 : 0);
   Blynk.virtualWrite(PIN_DEVICE_STATE, stateToString(deviceState));
   Blynk.virtualWrite(PIN_LAST_DISPENSE_AT, lastDispenseMs == 0 ? "--" : String(lastDispenseMs / 1000) + "s");
-  Blynk.virtualWrite(PIN_DEVICE_ONLINE, Blynk.connected() ? 1 : 0);
-
-  // NEW: raw remaining pumps
-  Blynk.virtualWrite(PIN_REMAINING_PUMPS, remainingPumps); //cleaner version
+  Blynk.virtualWrite(PIN_DEVICE_ONLINE, 1);
+  Blynk.virtualWrite(PIN_LIQUID_WEIGHT_GRAMS, liquidWeightGrams);
+  Blynk.virtualWrite(PIN_DISTANCE_MM, distanceMm);
+  Blynk.virtualWrite(PIN_LAST_DISPENSE_GRAMS, lastDispenseGrams);
 }
 
-bool canStartDispense() { 
-  // hard single-dispense lock
-  if (_dispensingActive) {
+void setState(DeviceState nextState) {
+  deviceState = nextState;
+  stateStartedMs = millis();
+  sendStatus();
+  updateStatusLeds();
+}
+
+bool hasLiquidAvailable() {
+  return remainingPercent > REFILL_ALERT_PERCENT;
+}
+
+bool hardwareReadyForDispense() {
+#if USE_MOCK_HARDWARE
+  return true;
+#else
+  return distanceSensorReady && scaleReady;
+#endif
+}
+
+bool canStartDispense() {
+  if (dispensingActive) {
     Serial.println("[GUARD] Dispense already active");
     return false;
   }
@@ -169,32 +444,36 @@ bool canStartDispense() {
     return false;
   }
 
-  if (remainingPumps <= 0) {
+  if (!hardwareReadyForDispense()) {
+    Serial.println("[BLOCK] Hardware not ready");
+    return false;
+  }
+
+  if (!hasLiquidAvailable()) {
     return false;
   }
 
   return deviceState == STATE_IDLE || deviceState == STATE_REFILL_REQUIRED;
 }
 
-void startDispenseCycle() { // updated to check if dispense can start, and set active flag to prevent multiple triggers during dispensing
-
+void startDispenseCycle() {
   if (!systemEnabled) {
     setState(STATE_DISABLED);
     return;
   }
 
   if (!canStartDispense()) {
-
-    if (remainingPumps <= 0) {
-      Serial.println("[BLOCK] Bottle empty");
+    if (!hardwareReadyForDispense()) {
+      setState(STATE_ERROR);
+    } else if (!hasLiquidAvailable()) {
+      Serial.println("[BLOCK] Refill required");
       setState(STATE_REFILL_REQUIRED);
     }
 
     return;
   }
 
-  _dispensingActive = true;
-
+  dispensingActive = true;
   setState(STATE_HAND_DETECTED);
 }
 
@@ -205,8 +484,7 @@ void updateStateMachine() {
       if (manualDispenseRequested) {
         manualDispenseRequested = false;
         startDispenseCycle();
-      }
-      else if (readHandDetected()) {
+      } else if (readHandDetected()) {
         startDispenseCycle();
       }
       break;
@@ -216,46 +494,57 @@ void updateStateMachine() {
       setState(STATE_DISPENSING);
       break;
 
-    case STATE_DISPENSING: // update usage and remaining pump count
-      if (sessionCount < MAX_PUMPS) {
-        usageCount += 1;
-        sessionCount += 1;
+    case STATE_DISPENSING:
+      usageCount += 1;
+      sessionCount += 1;
+
+#if USE_MOCK_HARDWARE
+      if (remainingPumpsEstimate > 0) {
+        remainingPumpsEstimate -= 1;
       }
+      liquidWeightGrams = (remainingPumpsEstimate * FULL_LIQUID_GRAMS) / MAX_PUMPS;
+      lastDispenseGrams = FULL_LIQUID_GRAMS / MAX_PUMPS;
+#endif
 
-      remainingPumps = MAX_PUMPS - sessionCount;
-
+      updateRemainingMetrics();
       lastDispenseMs = millis();
-
-      // release dispense lock
-      _dispensingActive = false;
+      dispensingActive = false;
 
       Serial.print("[COUNT] Total: ");
       Serial.print(usageCount);
       Serial.print(" | Session: ");
       Serial.print(sessionCount);
-      Serial.print(" | Remaining: ");
-      Serial.println(remainingPumps);
+      Serial.print(" | Remaining %: ");
+      Serial.print(remainingPercent);
+      Serial.print(" | Liquid g: ");
+      Serial.println(liquidWeightGrams, 1);
 
       setState(STATE_WAIT_STABILISE);
       break;
 
-    case STATE_WAIT_STABILISE: // allow dispense cycle to fully complete before next state
-
+    case STATE_WAIT_STABILISE:
       if (millis() - stateStartedMs >= STABILISE_DELAY_MS) {
         setState(STATE_CHECK_REFILL);
         break;
       }
 
-      // watchdog protection
       if (millis() - stateStartedMs >= STABILISE_TIMEOUT_MS) {
         Serial.println("[ERROR] WAIT_STABILISE timeout");
         setState(STATE_ERROR);
       }
-
       break;
 
-    case STATE_CHECK_REFILL: 
-      refillAlert = (remainingPumps <= 0);
+    case STATE_CHECK_REFILL:
+#if !USE_MOCK_HARDWARE
+      sampleMeasurements("post_weight");
+      lastDispenseGrams = previousLiquidWeightGrams - liquidWeightGrams;
+      if (lastDispenseGrams < 0.0) {
+        lastDispenseGrams = 0.0;
+      }
+      printCsvSample("post_dispense");
+#endif
+      updateRemainingMetrics();
+      updateRefillAlert();
       setState(STATE_UPDATE_STATUS);
       break;
 
@@ -263,46 +552,52 @@ void updateStateMachine() {
       setState(refillAlert ? STATE_REFILL_REQUIRED : STATE_IDLE);
       break;
 
-    case STATE_DISABLED: // Ensure system is fully inactive and reset session count, but keep total usage for stats
-      _dispensingActive = false;
+    case STATE_DISABLED:
+      dispensingActive = false;
 
       if (systemEnabled) {
         setState(refillAlert ? STATE_REFILL_REQUIRED : STATE_IDLE);
       }
-
       break;
 
-    case STATE_ERROR: // In error state, block all actions and require manual reset, but allow status updates to show error condition
-
+    case STATE_ERROR:
       if (millis() - lastErrorLogMs >= 2000) {
         lastErrorLogMs = millis();
         Serial.println("[ERROR] System in STATE_ERROR");
       }
 
       if (millis() - stateStartedMs >= ERROR_RECOVERY_MS) {
+        Serial.println("[RECOVERY] Attempting system recovery");
+        dispensingActive = false;
+        sampleMeasurements("recovery");
 
-        Serial.println("[RECOVERY] Recovering system");
-
-        _dispensingActive = false;
-
-        setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
+        if (hardwareReadyForDispense()) {
+          setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
+        } else {
+          Serial.println("[RECOVERY] Hardware still not ready");
+          stateStartedMs = millis();
+        }
       }
-
       break;
   }
 
-  if (resetAlertRequested) { // Reset session count and refill alert, but keep total usage count.
+  if (resetAlertRequested) {
     resetAlertRequested = false;
 
-    sessionCount = 0;
-    remainingPumps = MAX_PUMPS;
-    refillAlert = false;
+#if USE_MOCK_HARDWARE
+    remainingPumpsEstimate = MAX_PUMPS;
+    liquidWeightGrams = FULL_LIQUID_GRAMS;
+#else
+    sampleMeasurements("reset");
+#endif
 
-    _dispensingActive = false;  // FIX: unlock dispensing state
+    lastDispenseGrams = 0.0;
+    updateRemainingMetrics();
+    updateRefillAlert();
+    dispensingActive = false;
 
-    Serial.println("[RESET] Refill confirmed");
-
-    setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
+    Serial.println("[RESET] Refill reset requested");
+    setState(systemEnabled ? (refillAlert ? STATE_REFILL_REQUIRED : STATE_IDLE) : STATE_DISABLED);
   }
 }
 
@@ -316,29 +611,31 @@ BLYNK_WRITE(V11) {
 
 BLYNK_WRITE(V12) {
   systemEnabled = param.asInt() == 1;
-  setState(systemEnabled ? STATE_IDLE : STATE_DISABLED);
+  setState(systemEnabled ? (refillAlert ? STATE_REFILL_REQUIRED : STATE_IDLE) : STATE_DISABLED);
 }
 
-void setup() { 
+void setup() {
   Serial.begin(115200);
   delay(100);
 
-  pinMode(PIN_IR_SENSOR, INPUT); // Set IR sensor pin as input
+  setupStatusLeds();
 
-  Blynk.begin(BLYNK_AUTH_TOKEN, WIFI_SSID, WIFI_PASS); // Connect to WiFi and Blynk
+#if !USE_MOCK_HARDWARE
+  setupHardware();
+#else
+  Serial.println("[MOCK] Hardware simulation enabled");
+#endif
 
-  #if !USE_MOCK_HARDWARE
-    dispenserServo.attach(PIN_SERVO); // Attach servo to pin  
-    dispenserServo.write(SERVO_HOME_DEG); // Move servo to home position
-    delay(500);
-  #endif
+  sampleMeasurements("boot");
+  connectBlynk();
 
-  _dispensingActive = false;
-  setState(STATE_IDLE);
+  dispensingActive = false;
+  setState(deviceState == STATE_ERROR ? STATE_ERROR : STATE_IDLE);
 }
 
 void loop() {
-  Blynk.run();
+  runBlynkConnection();
+  sampleMeasurementsIfDue();
   updateStateMachine();
 
   if (millis() - lastStatusMs >= STATUS_INTERVAL_MS) {
@@ -347,73 +644,67 @@ void loop() {
   }
 }
 
-bool readHandDetected() { //updated logic to use IR sensor with debounce and stable state detection, replacing the old mock logic of reading from serial input
-  #if USE_MOCK_HARDWARE
-    if (Serial.available() == 0) {
-      return false;
-    }
-
-    char command = Serial.read();
-
-    if (command == 'd' || command == 'D') {
-      Serial.println("[MOCK] Trigger dispense");
-      return true;
-    }
-
+bool readHandDetected() {
+#if USE_MOCK_HARDWARE
+  if (Serial.available() == 0) {
     return false;
-  #else
-    bool rawDetected = IR_ACTIVE_LOW
-      ? (digitalRead(PIN_IR_SENSOR) == LOW)
-      : (digitalRead(PIN_IR_SENSOR) == HIGH);
+  }
 
-    unsigned long now = millis();
+  char command = Serial.read();
 
-    if (rawDetected != _irLastState) {
-      _irLastChangeMs = now;
-      _irLastState = rawDetected;
-    }
+  if (command == 'd' || command == 'D') {
+    Serial.println("[MOCK] Trigger dispense");
+    return true;
+  }
 
-    if ((now - _irLastChangeMs) >= IR_DEBOUNCE_MS) {
-      _irStableState = _irLastState;
-    }
-
-    if (_irStableState && _irEventConsumed) {
-      _irEventConsumed = false;
-      return false;
-    }
-
-    if (_irStableState && !_irEventConsumed) {
-      _irEventConsumed = true;
-      Serial.println("[IR] Hand detected");
-      return true;
-    }
-
-    if (!_irStableState) {
-      _irEventConsumed = true;
-    }
-
+  return false;
+#else
+  if (!readDistanceMeasurement()) {
     return false;
-  #endif
+  }
+
+  bool inRange = distanceMm >= MIN_HAND_DISTANCE_MM && distanceMm <= MAX_HAND_DISTANCE_MM;
+
+  if (inRange && !handPresent) {
+    handPresent = true;
+    Serial.print("[DISTANCE] Hand detected at ");
+    Serial.print(distanceMm);
+    Serial.println(" mm");
+    return true;
+  }
+
+  if (!inRange) {
+    handPresent = false;
+  }
+
+  return false;
+#endif
 }
 
-//updated to use servo for dispensing, replacing old mock logic of reading from serial input
 void performDispense() {
 #if USE_MOCK_HARDWARE
   Serial.println("[MOCK] Dispense start");
   delay(200);
   Serial.println("[MOCK] Dispense end");
-
 #else
+  readWeightMeasurement();
+  previousLiquidWeightGrams = liquidWeightGrams;
+
   Serial.println("[SERVO] Press started");
 
-  delay(SERVO_SETTLE_MS);
+  for (int angle = SERVO_HOME_DEG; angle >= SERVO_PRESS_DEG; angle--) {
+    dispenserServo.write(angle);
+    delay(SERVO_STEP_DELAY_MS);
+  }
 
-  dispenserServo.write(SERVO_PRESS_DEG);
-  delay(SERVO_PRESS_MS);
+  delay(SERVO_HOLD_MS);
 
-  dispenserServo.write(SERVO_HOME_DEG);
-  delay(SERVO_RETURN_MS);
+  for (int angle = SERVO_PRESS_DEG; angle <= SERVO_HOME_DEG; angle++) {
+    dispenserServo.write(angle);
+    delay(SERVO_STEP_DELAY_MS);
+  }
 
+  delay(SERVO_RETURN_SETTLE_MS);
   Serial.println("[SERVO] Cycle complete");
 #endif
 }

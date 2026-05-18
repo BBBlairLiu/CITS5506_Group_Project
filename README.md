@@ -17,26 +17,26 @@ At this stage:
 
 The current SmartSan design is based on:
 - **ESP32** as the main controller
-- **IR sensor** for hand detection
+- **VL53L1X distance sensor** for hand detection
 - **servo motor** for bottle pressing
-- **pump-count based refill estimation** for the current software prototype
+- **HX711 load cell** for weight-based refill estimation
 - **Blynk dashboard** as the primary mobile dashboard
 - **local browser interface** as a mock/demo fallback
 
 The current software flow is planned as:
 
-IR detects hand -> servo presses bottle -> usage count updates -> remaining pump count is updated -> refill status is checked -> status is sent to Blynk/dashboard
+Distance sensor detects hand -> servo presses bottle -> usage count updates -> liquid weight and remaining percentage are updated -> refill status is checked -> status is sent to Blynk/dashboard
 
 ## Dashboard Features (Mock Version)
 
 The current dashboard shows:
 - usage count
-- remaining pumps
+- liquid weight
 - remaining level percentage
 - sanitizer status
 - device state
 - device online state
-- refill threshold (pump count)
+- refill threshold
 - last dispense time
 - sync status and last sync time
 - last updated time
