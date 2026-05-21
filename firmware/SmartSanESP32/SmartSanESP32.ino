@@ -862,10 +862,6 @@ void setState(DeviceState nextState) {
   updateStatusLeds();
 }
 
-bool hasLiquidAvailable() {
-  return remainingPercent > REFILL_ALERT_PERCENT;
-}
-
 bool hardwareReadyForDispense() {
 #if USE_MOCK_HARDWARE
   return true;
@@ -906,10 +902,8 @@ bool canStartDispense() {
     return false;
   }
 
-  if (!hasLiquidAvailable()) {
-    return false;
-  }
-
+  // Refill required is a warning state only. It should not block the servo
+  // because the prototype still needs to dispense or be tested while low.
   return deviceState == STATE_IDLE || deviceState == STATE_REFILL_REQUIRED;
 }
 
@@ -923,9 +917,6 @@ void startDispenseCycle() {
     if (!hardwareReadyForDispense()) {
       printHardwareStatus("entering_error");
       setState(STATE_ERROR);
-    } else if (!hasLiquidAvailable()) {
-      Serial.println("[BLOCK] Refill required");
-      setState(STATE_REFILL_REQUIRED);
     }
 
     return;
