@@ -80,9 +80,9 @@ const int DISTANCE_SENSOR_TIMEOUT_MS = 200;
 // Servo settings from the hardware integration sketch
 const int SERVO_HOME_DEG = 90;
 const int SERVO_PRESS_DEG = 15;
-const int SERVO_STEP_DELAY_MS = 15;
-const int SERVO_HOLD_MS = 700;
-const int SERVO_RETURN_SETTLE_MS = 500;
+const int SERVO_STEP_DELAY_MS = 8;
+const int SERVO_HOLD_MS = 450;
+const int SERVO_RETURN_SETTLE_MS = 250;
 
 // HX711 load cell calibration from the hardware group.
 // Empty bottle is treated as 0 g liquid weight.
@@ -114,14 +114,14 @@ const int PIN_CALIBRATION_STATUS = V16;
 
 // Device and state machine variables
 const int MAX_PUMPS = 25;
-const unsigned long DISPENSE_LOCKOUT_MS = 2000;
-const unsigned long STABILISE_DELAY_MS = 1200;
+const unsigned long DISPENSE_LOCKOUT_MS = 1000;
+const unsigned long STABILISE_DELAY_MS = 700;
 const unsigned long STATUS_INTERVAL_MS = 5000;
-const unsigned long MEASUREMENT_INTERVAL_MS = 500;
+const unsigned long MEASUREMENT_INTERVAL_MS = 250;
 const unsigned long BLYNK_RECONNECT_INTERVAL_MS = 10000;
 const unsigned long WIFI_STATUS_LOG_INTERVAL_MS = 5000;
 const unsigned long STABILISE_TIMEOUT_MS = 5000;
-const unsigned long ERROR_RECOVERY_MS = 8000;
+const unsigned long ERROR_RECOVERY_MS = 4000;
 const unsigned long HX711_READY_TIMEOUT_MS = 5000;
 const unsigned long HX711_READY_RETRY_MS = 100;
 const unsigned long HX711_SAMPLE_TIMEOUT_MS = 300;
